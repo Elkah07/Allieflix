@@ -1,0 +1,9 @@
+# Firebase local cache and logs
+.firebase/
+firebase-debug.log*
+
+# Local dependencies / tooling
+node_modules/
+.env
+.DS_Store
+Thumbs.db

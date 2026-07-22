@@ -2,7 +2,13 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#061317" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AllieFlix" />
+  <meta name="format-detection" content="telephone=no" />
   <title>AllieFlix</title>
 <link rel="icon" href="./icon-512.png" />
 <link rel="apple-touch-icon" href="./icon-512.png" />
@@ -88,6 +94,10 @@
         <span class="compact-shortcut-icon">📊</span>
         <span><strong>Stats</strong><small>Votre duo en chiffres</small></span>
       </button>
+      <button class="compact-shortcut" data-home-view="challenges" type="button">
+        <span class="compact-shortcut-icon">🎯</span>
+        <span><strong>Défis du mois</strong><small>Votre mission cinéma à deux</small></span>
+      </button>
       <button class="compact-shortcut" data-home-view="duel" type="button">
         <span class="compact-shortcut-icon">🥊</span>
         <span><strong>Duel de films</strong><small>Un gagnant, aucun compromis</small></span>
@@ -110,6 +120,7 @@
       <button class="nav-card" data-view="cinema" type="button"><span class="nav-icon">🍿</span><strong>Cinéma</strong></button>
       <button class="nav-card" data-view="nosfilms" type="button"><span class="nav-icon">🎞️</span><strong>Nos films</strong></button>
       <button class="nav-card" data-view="stats" type="button"><span class="nav-icon">📊</span><strong>Stats</strong></button>
+      <button class="nav-card" data-view="challenges" type="button"><span class="nav-icon">🎯</span><strong>Défis</strong></button>
       <button class="nav-card" data-view="duel" type="button"><span class="nav-icon">🥊</span><strong>Duel</strong></button>
       <button class="nav-card" data-view="duo" type="button"><span class="nav-icon">👩‍❤️‍👩</span><strong>Nous deux</strong></button>
     </nav>
@@ -371,6 +382,17 @@
           <div id="wrappedContent"></div>
         </section>
 
+        <section id="challengesView" class="panel hidden">
+          <div class="panel-header">
+            <div>
+              <div class="view-kicker">🎯 Mission du mois</div>
+              <h2 class="view-title">Défis AllieFlix</h2>
+              <div class="small muted">Six petits objectifs qui se valident automatiquement avec vos séances.</div>
+            </div>
+          </div>
+          <div id="challengesContent"></div>
+        </section>
+
         <section id="statsView" class="panel hidden">
           <div class="panel-header">
             <div>
@@ -438,10 +460,25 @@
     <button data-extra-view="ajout" type="button"><span>➕</span><strong>Ajouter un film</strong><small>Maison ou cinéma</small></button>
     <button data-extra-view="nosfilms" type="button"><span>🎞️</span><strong>Nos films</strong><small>Votre historique à deux</small></button>
     <button data-extra-view="stats" type="button"><span>📊</span><strong>Statistiques</strong><small>Vos goûts en chiffres</small></button>
+    <button data-extra-view="challenges" type="button"><span>🎯</span><strong>Défis du mois</strong><small>Vos missions cinéma</small></button>
     <button data-extra-view="duel" type="button"><span>🥊</span><strong>Duel de films</strong><small>Élisez vos champions</small></button>
     <button data-extra-view="duo" type="button"><span>👩‍❤️‍👩</span><strong>Kathie vs Alyssia</strong><small>Votre compatibilité cinéma</small></button>
     <button data-extra-view="wrapped" type="button"><span>✨</span><strong>Notre année</strong><small>Votre récap AllieFlix</small></button>
+    <button id="installAppBtn" class="install-app-entry hidden" type="button"><span>📱</span><strong>Installer AllieFlix</strong><small>L’ajouter comme une vraie app</small></button>
   </div>
+</section>
+
+<div id="hotReactionBackdrop" class="sheet-backdrop hidden"></div>
+<section id="hotReactionSheet" class="hot-reaction-sheet hidden" aria-modal="true" role="dialog" aria-labelledby="hotReactionTitle">
+  <div class="sheet-handle"></div>
+  <button id="closeHotReactionBtn" class="sheet-close hot-reaction-close" type="button" aria-label="Fermer">✕</button>
+  <div class="hot-reaction-copy">
+    <span class="section-kicker">Réaction à chaud</span>
+    <h2 id="hotReactionTitle">Alors, verdict ?</h2>
+    <p id="hotReactionSubtitle">Une seule réaction. Pas le temps de réfléchir.</p>
+  </div>
+  <div id="hotReactionChoices" class="hot-reaction-choices" aria-label="Choisir une réaction"></div>
+  <button id="hotReactionLaterBtn" class="ghost hot-reaction-later" type="button">Je répondrai plus tard</button>
 </section>
 
 <div id="appBootLoader" class="app-boot-loader">

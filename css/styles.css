@@ -2497,7 +2497,7 @@ button:active{transform:scale(.97)}
    ALLIEFLIX EXPERIENCE PACK — fun, souvenirs, duels, wrapped
    ========================================================= */
 
-.compact-app-nav{grid-template-columns:repeat(7,minmax(0,1fr))}
+.compact-app-nav{grid-template-columns:repeat(8,minmax(0,1fr))}
 .compact-shortcuts{grid-template-columns:repeat(4,minmax(0,1fr))}
 
 .allie-mood-banner{
@@ -2664,4 +2664,602 @@ button:active{transform:scale(.97)}
   .compact-shortcuts{display:flex;overflow-x:auto;gap:8px;padding-bottom:4px;scroll-snap-type:x mandatory;scrollbar-width:none}
   .compact-shortcuts::-webkit-scrollbar{display:none}
   .compact-shortcut{flex:0 0 176px;min-height:74px;scroll-snap-align:start}
+}
+
+
+/* =========================================================
+   ALLIEFLIX MOBILE APP + DÉFIS + RÉACTIONS À CHAUD
+   ========================================================= */
+
+html{
+  min-height:100%;
+  background:var(--bg);
+}
+
+body{
+  min-height:100dvh;
+  overscroll-behavior-y:none;
+  -webkit-tap-highlight-color:transparent;
+}
+
+button,
+a,
+select{
+  touch-action:manipulation;
+}
+
+/* Défis mensuels */
+.challenge-hero{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 132px;
+  gap:22px;
+  align-items:center;
+  margin-bottom:14px;
+  padding:24px;
+  border-radius:26px;
+  border:1px solid rgba(126,246,239,.14);
+  background:
+    radial-gradient(circle at 90% 10%,rgba(255,217,118,.12),transparent 28%),
+    linear-gradient(135deg,rgba(50,214,198,.08),rgba(255,255,255,.025));
+}
+
+.challenge-month h2{
+  margin:7px 0 7px;
+  font-size:clamp(1.65rem,3vw,2.5rem);
+  letter-spacing:-.045em;
+}
+
+.challenge-month p{
+  max-width:680px;
+  margin:0;
+  color:var(--muted);
+  line-height:1.55;
+}
+
+.challenge-score{
+  width:118px;
+  height:118px;
+  margin-left:auto;
+  border-radius:50%;
+  display:grid;
+  place-content:center;
+  text-align:center;
+  position:relative;
+  background:conic-gradient(var(--accent3) var(--challenge-score),rgba(255,255,255,.07) 0);
+}
+
+.challenge-score::before{
+  content:"";
+  position:absolute;
+  inset:8px;
+  border-radius:inherit;
+  background:#092127;
+}
+
+.challenge-score strong,
+.challenge-score small{
+  position:relative;
+  z-index:1;
+}
+
+.challenge-score strong{
+  font-size:1.72rem;
+  line-height:1;
+}
+
+.challenge-score small{
+  margin-top:4px;
+  color:var(--muted);
+  font-size:.68rem;
+}
+
+.challenge-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+
+.challenge-card{
+  min-width:0;
+  padding:18px;
+  border-radius:22px;
+  border:1px solid rgba(255,255,255,.07);
+  background:rgba(255,255,255,.026);
+  box-shadow:0 12px 28px rgba(0,0,0,.12);
+}
+
+.challenge-card.is-complete{
+  border-color:rgba(125,255,191,.24);
+  background:linear-gradient(145deg,rgba(125,255,191,.08),rgba(255,255,255,.025));
+}
+
+.challenge-card-top{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+}
+
+.challenge-icon{
+  width:46px;
+  height:46px;
+  border-radius:15px;
+  display:grid;
+  place-items:center;
+  background:linear-gradient(135deg,rgba(50,214,198,.14),rgba(62,184,216,.12));
+  font-size:1.2rem;
+  font-weight:1000;
+}
+
+.challenge-card.is-complete .challenge-icon{
+  color:#05251f;
+  background:linear-gradient(135deg,var(--ok),var(--accent3));
+  animation:challengePop .45s var(--v2-ease) both;
+}
+
+.challenge-status{
+  padding:6px 9px;
+  border-radius:999px;
+  color:var(--muted);
+  background:rgba(255,255,255,.045);
+  font-size:.69rem;
+  font-weight:800;
+}
+
+.challenge-card.is-complete .challenge-status{
+  color:var(--ok);
+}
+
+.challenge-card h3{
+  margin:16px 0 5px;
+  font-size:1rem;
+}
+
+.challenge-card p{
+  min-height:40px;
+  margin:0 0 14px;
+  color:var(--muted);
+  font-size:.78rem;
+  line-height:1.45;
+}
+
+.challenge-progress{
+  height:7px;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(255,255,255,.07);
+}
+
+.challenge-progress i{
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,var(--accent),var(--gold));
+  transition:width .45s var(--v2-ease);
+}
+
+/* Réactions à chaud */
+.hot-reaction-sheet{
+  position:fixed;
+  left:50%;
+  bottom:18px;
+  z-index:125;
+  width:min(600px,calc(100vw - 24px));
+  transform:translateX(-50%);
+  padding:14px 20px 20px;
+  border-radius:30px;
+  border:1px solid rgba(126,246,239,.18);
+  background:
+    radial-gradient(circle at 50% 0%,rgba(50,214,198,.1),transparent 30%),
+    linear-gradient(180deg,#0b2b32,#071b20);
+  box-shadow:0 36px 90px rgba(0,0,0,.56);
+  animation:hotReactionUp .32s var(--v2-ease) both;
+}
+
+#hotReactionBackdrop{
+  z-index:120;
+}
+
+.hot-reaction-close{
+  position:absolute;
+  top:15px;
+  right:15px;
+}
+
+.hot-reaction-copy{
+  padding:8px 44px 8px 0;
+}
+
+.hot-reaction-copy h2{
+  margin:6px 0 5px;
+  font-size:1.65rem;
+  letter-spacing:-.04em;
+}
+
+.hot-reaction-copy p{
+  margin:0;
+  color:var(--muted);
+  line-height:1.45;
+}
+
+.hot-reaction-choices{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:9px;
+  margin:14px 0 10px;
+}
+
+.hot-reaction-choice{
+  min-height:108px;
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:7px;
+  padding:12px 8px;
+  color:var(--text);
+  border-radius:20px;
+  border:1px solid rgba(255,255,255,.075);
+  background:rgba(255,255,255,.035);
+  transition:transform .18s var(--v2-ease),border-color .18s,background .18s;
+}
+
+.hot-reaction-choice:hover,
+.hot-reaction-choice.selected{
+  transform:translateY(-2px);
+  border-color:rgba(126,246,239,.28);
+  background:rgba(50,214,198,.08);
+}
+
+.hot-reaction-choice span{
+  font-size:2.05rem;
+  line-height:1;
+}
+
+.hot-reaction-choice small{
+  color:#d8fbf8;
+  font-size:.72rem;
+  line-height:1.25;
+}
+
+.hot-reaction-later{
+  width:100%;
+  min-height:44px;
+}
+
+.hot-reaction-panel{
+  margin-top:12px;
+  padding:14px;
+  border-radius:20px;
+  border:1px solid rgba(126,246,239,.11);
+  background:linear-gradient(135deg,rgba(50,214,198,.05),rgba(255,255,255,.02));
+}
+
+.hot-reaction-duo{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:8px;
+  margin-top:10px;
+}
+
+.hot-reaction-person{
+  min-width:0;
+  display:grid;
+  grid-template-columns:42px minmax(0,1fr) auto;
+  align-items:center;
+  gap:10px;
+  padding:10px;
+  color:var(--text);
+  text-align:left;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.065);
+  background:rgba(255,255,255,.03);
+}
+
+.hot-reaction-person.is-active-profile{
+  border-color:rgba(126,246,239,.2);
+}
+
+.hot-reaction-person-copy{
+  min-width:0;
+}
+
+.hot-reaction-person-copy strong,
+.hot-reaction-person-copy small{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.hot-reaction-person-copy small{
+  margin-top:2px;
+  color:var(--muted);
+  font-size:.69rem;
+}
+
+.hot-reaction-person>b{
+  font-size:1.7rem;
+}
+
+.install-app-entry{
+  border-color:rgba(126,246,239,.22)!important;
+  background:linear-gradient(135deg,rgba(50,214,198,.09),rgba(62,184,216,.07))!important;
+}
+
+/* L'application mobile devient un vrai app-shell, pas juste un site rétréci. */
+@media (max-width:720px){
+  html{
+    background:#061317;
+  }
+
+  body{
+    min-height:100dvh;
+    padding-top:env(safe-area-inset-top);
+    overscroll-behavior-y:contain;
+  }
+
+  body.reaction-sheet-open{
+    overflow:hidden;
+  }
+
+  .container{
+    width:100%;
+    padding:
+      6px 11px
+      calc(94px + env(safe-area-inset-bottom))
+      11px;
+  }
+
+  .v2-topbar{
+    top:4px;
+    z-index:80;
+    min-height:56px;
+    margin-bottom:8px;
+    padding:7px 8px;
+    border-radius:18px;
+  }
+
+  .logo-btn{
+    gap:8px;
+  }
+
+  .logo-mark{
+    width:38px;
+    height:38px;
+    border-radius:12px;
+  }
+
+  .logo-title{
+    font-size:1.18rem;
+  }
+
+  .profile-pill{
+    min-height:38px;
+    border-radius:13px;
+  }
+
+  .profile-pill select{
+    min-width:82px;
+    font-size:.86rem;
+  }
+
+  #appPage .panel{
+    padding:14px;
+    border-radius:21px;
+  }
+
+  #appPage .panel-header{
+    margin-bottom:12px;
+  }
+
+  #appPage .view-title{
+    font-size:1.45rem;
+    letter-spacing:-.04em;
+  }
+
+  input,
+  textarea,
+  select{
+    font-size:16px;
+  }
+
+  input,
+  select{
+    min-height:48px;
+  }
+
+  textarea{
+    min-height:108px;
+  }
+
+  .subfilters{
+    display:flex;
+    flex-wrap:nowrap;
+    overflow-x:auto;
+    gap:7px;
+    margin-left:-2px;
+    margin-right:-2px;
+    padding:2px 2px 7px;
+    scrollbar-width:none;
+    scroll-snap-type:x proximity;
+  }
+
+  .subfilters::-webkit-scrollbar{
+    display:none;
+  }
+
+  .subfilters button{
+    flex:0 0 auto;
+    min-height:42px;
+    scroll-snap-align:start;
+  }
+
+  .mobile-nav{
+    left:9px;
+    right:9px;
+    bottom:max(9px,env(safe-area-inset-bottom));
+    height:68px;
+    z-index:110;
+    border-radius:22px;
+    box-shadow:0 18px 45px rgba(0,0,0,.42);
+  }
+
+  .mobile-nav button{
+    min-width:0;
+  }
+
+  .more-sheet{
+    bottom:calc(84px + env(safe-area-inset-bottom));
+    max-height:min(72dvh,620px);
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    padding-bottom:18px;
+  }
+
+  #toast{
+    left:12px;
+    right:12px;
+    bottom:calc(90px + env(safe-area-inset-bottom));
+    width:auto;
+    min-width:0;
+    max-width:none;
+  }
+
+  .scroll-top-btn{
+    bottom:calc(92px + env(safe-area-inset-bottom));
+  }
+
+  .challenge-hero{
+    grid-template-columns:1fr 90px;
+    gap:12px;
+    padding:18px 15px;
+    border-radius:22px;
+  }
+
+  .challenge-month h2{
+    font-size:1.45rem;
+  }
+
+  .challenge-month p{
+    font-size:.78rem;
+  }
+
+  .challenge-score{
+    width:86px;
+    height:86px;
+  }
+
+  .challenge-score strong{
+    font-size:1.3rem;
+  }
+
+  .challenge-grid{
+    grid-template-columns:1fr;
+    gap:8px;
+  }
+
+  .challenge-card{
+    padding:15px;
+  }
+
+  .challenge-card p{
+    min-height:0;
+  }
+
+  .hot-reaction-sheet{
+    left:0;
+    right:0;
+    bottom:0;
+    width:100%;
+    transform:none;
+    animation:hotReactionMobileUp .32s var(--v2-ease) both;
+    padding:
+      12px 14px
+      calc(16px + env(safe-area-inset-bottom));
+    border-radius:28px 28px 0 0;
+  }
+
+  .hot-reaction-copy{
+    padding-top:5px;
+  }
+
+  .hot-reaction-copy h2{
+    font-size:1.45rem;
+  }
+
+  .hot-reaction-choices{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:7px;
+  }
+
+  .hot-reaction-choice{
+    min-height:94px;
+    border-radius:17px;
+  }
+
+  .hot-reaction-choice span{
+    font-size:1.8rem;
+  }
+
+  .hot-reaction-choice small{
+    font-size:.65rem;
+  }
+
+  .hot-reaction-duo{
+    grid-template-columns:1fr;
+  }
+
+  .film-actions button,
+  .control-strip button{
+    min-height:46px;
+  }
+}
+
+@media (max-width:390px){
+  .hot-reaction-choices{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+
+  .compact-dashboard-stats{
+    gap:6px;
+  }
+
+  .compact-stat-card{
+    padding:10px 7px;
+  }
+
+  .compact-stat-card strong{
+    font-size:1.35rem;
+  }
+}
+
+@media (display-mode:standalone) and (max-width:720px){
+  body{
+    user-select:none;
+  }
+
+  input,
+  textarea{
+    user-select:text;
+  }
+
+  .v2-topbar{
+    top:0;
+  }
+}
+
+@keyframes challengePop{
+  0%{transform:scale(.72);opacity:.3}
+  65%{transform:scale(1.12)}
+  100%{transform:scale(1);opacity:1}
+}
+
+@keyframes hotReactionUp{
+  from{opacity:0;transform:translate(-50%,24px) scale(.98)}
+  to{opacity:1;transform:translate(-50%,0) scale(1)}
+}
+
+@keyframes hotReactionMobileUp{
+  from{opacity:0;transform:translateY(28px) scale(.985)}
+  to{opacity:1;transform:none}
 }

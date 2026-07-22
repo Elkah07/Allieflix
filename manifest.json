@@ -1,15 +1,30 @@
 {
+  "id": "./",
   "name": "AllieFlix",
   "short_name": "AllieFlix",
-  "start_url": ".",
+  "description": "Votre cinéma à deux : films, sorties, tirages, souvenirs et défis.",
+  "lang": "fr",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#061317",
-  "theme_color": "#32d6c6",
+  "theme_color": "#061317",
+  "categories": [
+    "entertainment",
+    "lifestyle"
+  ],
   "icons": [
     {
-      "src": "/icon-512.png",
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

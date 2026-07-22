@@ -53,6 +53,7 @@ statsDrilldown: null,
   duelChampion: null,
   duelRoundNumber: 1,
   wrappedYear: Number(localStorage.getItem("allieflix_wrapped_year")) || new Date().getFullYear(),
+  pendingHotReaction: null,
 };
 
   const els = {
@@ -138,6 +139,16 @@ titleSuggestions: document.getElementById("titleSuggestions"),
     wrappedView: document.getElementById("wrappedView"),
     wrappedContent: document.getElementById("wrappedContent"),
     wrappedYearSelect: document.getElementById("wrappedYearSelect"),
+    challengesView: document.getElementById("challengesView"),
+    challengesContent: document.getElementById("challengesContent"),
+    installAppBtn: document.getElementById("installAppBtn"),
+    hotReactionBackdrop: document.getElementById("hotReactionBackdrop"),
+    hotReactionSheet: document.getElementById("hotReactionSheet"),
+    hotReactionTitle: document.getElementById("hotReactionTitle"),
+    hotReactionSubtitle: document.getElementById("hotReactionSubtitle"),
+    hotReactionChoices: document.getElementById("hotReactionChoices"),
+    closeHotReactionBtn: document.getElementById("closeHotReactionBtn"),
+    hotReactionLaterBtn: document.getElementById("hotReactionLaterBtn"),
   };
   els.sortSelect.value = state.sortMode;
   els.activeProfileSelect.value = state.activeProfile;
@@ -275,6 +286,165 @@ function closeMoreSheet() {
   els.moreSheet?.classList.add("hidden");
   els.moreSheetBackdrop?.classList.add("hidden");
   document.body.style.overflow = "";
+}
+
+let deferredInstallPrompt = null;
+
+function isStandaloneApp() {
+  return window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator.standalone === true;
+}
+
+function isIosBrowser() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent || "");
+}
+
+function updateInstallAppButton() {
+  if (!els.installAppBtn) return;
+  const canSuggestInstall = !isStandaloneApp() && (deferredInstallPrompt || isIosBrowser());
+  els.installAppBtn.classList.toggle("hidden", !canSuggestInstall);
+}
+
+function setupMobileAppInstall() {
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(error => {
+        console.warn("Service worker non enregistré", error);
+      });
+    }, { once:true });
+  }
+
+  window.addEventListener("beforeinstallprompt", event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateInstallAppButton();
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    updateInstallAppButton();
+    closeMoreSheet();
+    showToast("AllieFlix est installée sur ton téléphone 📱✨");
+  });
+
+  els.installAppBtn?.addEventListener("click", async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      try { await deferredInstallPrompt.userChoice; } catch {}
+      deferredInstallPrompt = null;
+      updateInstallAppButton();
+      return;
+    }
+
+    if (isIosBrowser()) {
+      showToast("Sur iPhone : Safari → Partager → Sur l’écran d’accueil 📱");
+      return;
+    }
+
+    showToast("L’installation sera proposée dès que ton navigateur la permet.");
+  });
+
+  updateInstallAppButton();
+}
+
+const HOT_REACTIONS = [
+  { emoji:"😍", label:"J’ai adoré" },
+  { emoji:"😭", label:"Ça m’a détruite" },
+  { emoji:"😱", label:"Je suis traumatisée" },
+  { emoji:"🤯", label:"Mon cerveau a explosé" },
+  { emoji:"😐", label:"Mouais…" },
+  { emoji:"🤢", label:"Plus jamais" },
+];
+
+function hotReactionField(person) {
+  return person === "Alyssia" ? "hotReactionAlyssia" : "hotReactionKathie";
+}
+
+function hotReactionDateField(person) {
+  return person === "Alyssia" ? "hotReactionAlyssiaAtMs" : "hotReactionKathieAtMs";
+}
+
+function getHotReaction(film, person) {
+  return film?.[hotReactionField(person)] || "";
+}
+
+function closeHotReactionPrompt() {
+  state.pendingHotReaction = null;
+  els.hotReactionSheet?.classList.add("hidden");
+  els.hotReactionBackdrop?.classList.add("hidden");
+  document.body.classList.remove("reaction-sheet-open");
+}
+
+function openHotReactionPrompt(cat, id, person = state.activeProfile) {
+  const film = getFilmByIds(cat, id);
+  if (!film) return;
+  const safePerson = person === "Alyssia" ? "Alyssia" : "Kathie";
+  state.pendingHotReaction = { cat:film.cat, id:film.id, person:safePerson };
+
+  if (els.hotReactionTitle) els.hotReactionTitle.textContent = `${safePerson}, réaction à chaud ?`;
+  if (els.hotReactionSubtitle) {
+    els.hotReactionSubtitle.textContent = `${film.title} vient de rejoindre vos films vus. Choisis l’émotion qui te vient en premier.`;
+  }
+  if (els.hotReactionChoices) {
+    const current = getHotReaction(film, safePerson);
+    els.hotReactionChoices.innerHTML = HOT_REACTIONS.map(item => `
+      <button class="hot-reaction-choice ${current === item.emoji ? "selected" : ""}" type="button"
+        data-hot-reaction="${item.emoji}" aria-label="${escapeHtml(item.label)}">
+        <span>${item.emoji}</span><small>${escapeHtml(item.label)}</small>
+      </button>
+    `).join("");
+
+    els.hotReactionChoices.querySelectorAll("[data-hot-reaction]").forEach(button => {
+      button.addEventListener("click", () => saveHotReaction(button.dataset.hotReaction || ""));
+    });
+  }
+
+  els.hotReactionBackdrop?.classList.remove("hidden");
+  els.hotReactionSheet?.classList.remove("hidden");
+  document.body.classList.add("reaction-sheet-open");
+}
+
+async function saveHotReaction(emoji) {
+  const pending = state.pendingHotReaction;
+  if (!pending || !HOT_REACTIONS.some(item => item.emoji === emoji)) return;
+  try {
+    await patchFilm(pending.cat, pending.id, {
+      [hotReactionField(pending.person)]: emoji,
+      [hotReactionDateField(pending.person)]: Date.now()
+    });
+    closeHotReactionPrompt();
+    showToast(`${emoji} Réaction de ${pending.person} enregistrée`);
+  } catch (error) {
+    console.error(error);
+    showToast("Impossible d’enregistrer la réaction", true);
+  }
+}
+
+function renderHotReactionSection(film) {
+  const profiles = [
+    { name:"Kathie", initial:"K", seen:film.kathieSeen || film.seenTogether },
+    { name:"Alyssia", initial:"A", seen:film.alyssiaSeen || film.seenTogether },
+  ].filter(profile => profile.seen);
+
+  if (!profiles.length) return "";
+
+  return `
+    <section class="hot-reaction-panel">
+      <div class="memory-head">
+        <div><span>⚡ Réactions à chaud</span><strong>Le premier ressenti, avant la note</strong></div>
+      </div>
+      <div class="hot-reaction-duo">
+        ${profiles.map(profile => {
+          const reaction = getHotReaction(film, profile.name);
+          const reactionMeta = HOT_REACTIONS.find(item => item.emoji === reaction);
+          return `<button class="hot-reaction-person ${profile.name === state.activeProfile ? "is-active-profile" : ""}" type="button"
+            onclick="window.openHotReactionPrompt('${film.cat}','${film.id}','${profile.name}')">
+            <span class="review-avatar ${profile.name.toLowerCase()}">${profile.initial}</span>
+            <span class="hot-reaction-person-copy"><strong>${profile.name}</strong><small>${reactionMeta ? escapeHtml(reactionMeta.label) : "Ajouter une réaction"}</small></span>
+            <b>${reaction || "＋"}</b>
+          </button>`;
+        }).join("")}
+      </div>
+    </section>`;
 }
 
 function showHome() {
@@ -509,7 +679,7 @@ if (view !== "bibliotheque" && view !== "cinema") {
       btn.classList.toggle("active", btn.dataset.mobileView === view);
     });
     els.mobileHomeBtn?.classList.remove("active");
-    els.mobileMoreBtn?.classList.toggle("active", ["ajout", "nosfilms", "stats", "duel", "duo", "wrapped"].includes(view));
+    els.mobileMoreBtn?.classList.toggle("active", ["ajout", "nosfilms", "stats", "challenges", "duel", "duo", "wrapped"].includes(view));
     document.body.dataset.view = view;
     els.tirageView.classList.toggle("hidden", view !== "tirage");
     els.ajoutView.classList.toggle("hidden", view !== "ajout");
@@ -517,14 +687,15 @@ if (view !== "bibliotheque" && view !== "cinema") {
     els.cinemaView.classList.toggle("hidden", view !== "cinema");
     els.statsView.classList.toggle("hidden", view !== "stats");
     els.nosfilmsView.classList.toggle("hidden", view !== "nosfilms");
+    els.challengesView?.classList.toggle("hidden", view !== "challenges");
     els.duelView?.classList.toggle("hidden", view !== "duel");
     els.duoView?.classList.toggle("hidden", view !== "duo");
     els.wrappedView?.classList.toggle("hidden", view !== "wrapped");
-    els.appPage?.classList.toggle("immersive-view", ["duel", "duo", "wrapped"].includes(view));
+    els.appPage?.classList.toggle("immersive-view", ["challenges", "duel", "duo", "wrapped"].includes(view));
 const isMobile = window.innerWidth <= 980;
 
 if (els.appSidebar) {
-  if (isMobile || ["duel", "duo", "wrapped"].includes(view)) {
+  if (isMobile || ["challenges", "duel", "duo", "wrapped"].includes(view)) {
     els.appSidebar.classList.add("hidden");
     els.appSidebar.style.display = "none";
   } else {
@@ -733,6 +904,121 @@ const cinemaSeenTogether = all.filter(f =>
     const d = new Date(ms);
     if (Number.isNaN(d.getTime())) return "";
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  function currentMonthBounds() {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+    return { start, end, label: now.toLocaleDateString("fr-FR", { month:"long", year:"numeric" }) };
+  }
+
+  function getMonthlyChallenges() {
+    const { start, end, label } = currentMonthBounds();
+    const all = getAllFilmsFlat();
+    const togetherThisMonth = all.filter(f => {
+      const ms = Number(f.seenTogetherAtMs) || 0;
+      return f.seenTogether && ms >= start && ms < end;
+    });
+
+    const cinemaCount = togetherThisMonth.filter(isCinemaFilm).length;
+    const before2000Count = togetherThisMonth.filter(f => {
+      const year = Number.parseInt(f.year, 10);
+      return Number.isFinite(year) && year < 2000;
+    }).length;
+    const categoriesCount = new Set(togetherThisMonth.map(f => f.cat).filter(Boolean)).size;
+    const horrorCount = togetherThisMonth.filter(f => /horreur|horror/i.test(getCategoryName(f.cat))).length;
+
+    const dayCounts = {};
+    togetherThisMonth.forEach(f => {
+      const key = calendarDayKey(f.seenTogetherAtMs);
+      if (key) dayCounts[key] = (dayCounts[key] || 0) + 1;
+    });
+    const maxSameDay = Math.max(0, ...Object.values(dayCounts));
+
+    const items = [
+      {
+        icon:"🍿",
+        title:"Trois séances, un mois",
+        desc:"Regardez 3 films ensemble ce mois-ci.",
+        value:togetherThisMonth.length,
+        target:3,
+      },
+      {
+        icon:"🎟️",
+        title:"Grand écran",
+        desc:"Faites au moins une sortie cinéma ensemble.",
+        value:cinemaCount,
+        target:1,
+      },
+      {
+        icon:"📼",
+        title:"Voyage dans le temps",
+        desc:"Regardez ensemble un film sorti avant 2000.",
+        value:before2000Count,
+        target:1,
+      },
+      {
+        icon:"🎨",
+        title:"Changer d’ambiance",
+        desc:"Explorez 3 catégories différentes dans le mois.",
+        value:categoriesCount,
+        target:3,
+      },
+      {
+        icon:"😱",
+        title:"Soirée frissons",
+        desc:"Regardez au moins un film d’horreur ensemble.",
+        value:horrorCount,
+        target:1,
+      },
+      {
+        icon:"🌙",
+        title:"Double séance",
+        desc:"Regardez 2 films ensemble le même jour.",
+        value:maxSameDay,
+        target:2,
+      },
+    ].map(item => ({
+      ...item,
+      complete:item.value >= item.target,
+      progress:Math.min(100, Math.round((item.value / item.target) * 100)),
+    }));
+
+    return { label, items };
+  }
+
+  function renderChallengesPage() {
+    if (!els.challengesContent) return;
+    const { label, items } = getMonthlyChallenges();
+    const completed = items.filter(item => item.complete).length;
+    const overall = Math.round(items.reduce((sum, item) => sum + item.progress, 0) / items.length);
+
+    els.challengesContent.innerHTML = `
+      <section class="challenge-hero">
+        <div class="challenge-month">
+          <span class="section-kicker">${escapeHtml(label)}</span>
+          <h2>${completed === items.length ? "Mission accomplie ✨" : `${completed}/${items.length} défis terminés`}</h2>
+          <p>${completed === items.length ? "Vous avez plié le mois. Le générique peut défiler." : "Tout se met à jour automatiquement quand vous marquez vos films comme vus ensemble."}</p>
+        </div>
+        <div class="challenge-score" style="--challenge-score:${overall * 3.6}deg">
+          <strong>${overall}%</strong><small>du mois</small>
+        </div>
+      </section>
+      <div class="challenge-grid">
+        ${items.map(item => `
+          <article class="challenge-card ${item.complete ? "is-complete" : ""}">
+            <div class="challenge-card-top">
+              <span class="challenge-icon">${item.complete ? "✓" : item.icon}</span>
+              <span class="challenge-status">${item.complete ? "Terminé" : `${Math.min(item.value,item.target)}/${item.target}`}</span>
+            </div>
+            <h3>${escapeHtml(item.title)}</h3>
+            <p>${escapeHtml(item.desc)}</p>
+            <div class="challenge-progress"><i style="width:${item.progress}%"></i></div>
+          </article>
+        `).join("")}
+      </div>
+    `;
   }
 
   function getAchievements() {
@@ -1563,6 +1849,7 @@ ${f.missed ? '<span class="chip missed">😔 Raté</span>' : ''}
 
 ${drilldownExtraHtml}
 ${premiumDetail ? renderDuoReviews(f) : ""}
+${premiumDetail ? renderHotReactionSection(f) : ""}
 ${premiumDetail ? renderFilmMemorySection(f) : ""}
 
             <div class="status-row">
@@ -2199,6 +2486,10 @@ function renderCurrentMainView() {
     renderDrawResult();
     return;
   }
+  if (state.mainView === "challenges") {
+    renderChallengesPage();
+    return;
+  }
   if (state.mainView === "duel") {
     renderDuelPage();
     return;
@@ -2758,6 +3049,10 @@ hideTitleSuggestions();
   
 
   function bindEvents() {
+    els.closeHotReactionBtn?.addEventListener("click", closeHotReactionPrompt);
+    els.hotReactionLaterBtn?.addEventListener("click", closeHotReactionPrompt);
+    els.hotReactionBackdrop?.addEventListener("click", closeHotReactionPrompt);
+
     els.activeProfileSelect.addEventListener("change", () => {
       state.activeProfile = els.activeProfileSelect.value;
       localStorage.setItem("allieflix_active_profile", state.activeProfile);
@@ -2978,7 +3273,12 @@ els.filterMustWatchBtn.addEventListener("click", () => {
       else setMainView(btn.dataset.extraView);
     }));
     document.addEventListener("keydown", event => {
-      if (event.key === "Escape" && !els.moreSheet?.classList.contains("hidden")) closeMoreSheet();
+      if (event.key !== "Escape") return;
+      if (!els.hotReactionSheet?.classList.contains("hidden")) {
+        closeHotReactionPrompt();
+        return;
+      }
+      if (!els.moreSheet?.classList.contains("hidden")) closeMoreSheet();
     });
 
     document.getElementById("filmImage").addEventListener("change", async e => {
@@ -3053,6 +3353,7 @@ window.quickToggleMustWatch = async (cat, id) => {
 };
 
 window.navigateAllieFlix = view => setMainView(view);
+window.openHotReactionPrompt = openHotReactionPrompt;
 
 window.closeFocusedFilm = () => {
   state.focusedFilm = null;
@@ -3164,6 +3465,9 @@ window.scrollTo({ top: 0, behavior: "auto" });
       const patch = { kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether };
       if (!normalized.seenTogether) { patch.seenTogetherAtMs = null; patch.seenTogetherDateLabel = ""; }
       await patchFilm(cat, id, patch);
+      if (value && !getHotReaction(film, "Kathie")) {
+        setTimeout(() => openHotReactionPrompt(cat, id, "Kathie"), 120);
+      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3175,6 +3479,9 @@ window.scrollTo({ top: 0, behavior: "auto" });
       const patch = { kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether };
       if (!normalized.seenTogether) { patch.seenTogetherAtMs = null; patch.seenTogetherDateLabel = ""; }
       await patchFilm(cat, id, patch);
+      if (value && !getHotReaction(film, "Alyssia")) {
+        setTimeout(() => openHotReactionPrompt(cat, id, "Alyssia"), 120);
+      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3185,6 +3492,9 @@ window.scrollTo({ top: 0, behavior: "auto" });
       const normalized = normalizeSeenState({ kathieSeen: true, alyssiaSeen: true, seenTogether: film.seenTogether });
       await patchFilm(cat, id, { kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether });
       showToast("Film marqué vu par les deux ✨");
+      if (!getHotReaction(film, state.activeProfile)) {
+        setTimeout(() => openHotReactionPrompt(cat, id, state.activeProfile), 120);
+      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3210,6 +3520,9 @@ window.scrollTo({ top: 0, behavior: "auto" });
       await patchFilm(cat, id, patch);
       if (value && isCinemaFilm(film)) showToast("Une séance de plus dans votre histoire 🍿");
       else showToast(value ? "Film ajouté à votre histoire à deux 🎬" : 'Statut "vu ensemble" retiré');
+      if (value && !getHotReaction(film, state.activeProfile)) {
+        setTimeout(() => openHotReactionPrompt(cat, id, state.activeProfile), 180);
+      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3410,13 +3723,18 @@ showToast("Commentaire modifié ✨");
   window.markDrawResultSeenTonight = async (cat, id) => {
     try {
       const now = Date.now();
+      const film = getFilmByIds(cat, id);
       await patchFilm(cat, id, { kathieSeen: true, alyssiaSeen: true, seenTogether: true, seenTogetherAtMs: now, seenTogetherDateLabel: formatDate(now) });
       showToast("Film marqué vu ce soir 🎬");
       setMainView("nosfilms");
+      if (film && !getHotReaction(film, state.activeProfile)) {
+        setTimeout(() => openHotReactionPrompt(cat, id, state.activeProfile), 220);
+      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
   bindEvents();
+setupMobileAppInstall();
 watchCategories();
 watchDrawHistory();
 refreshUI();

@@ -11,88 +11,138 @@
 </head>
 <body>
 <div class="container">
-  <div class="topbar">
-    <button class="logo-btn" id="goHomeBtn" type="button">
+  <div class="topbar v2-topbar">
+    <button class="logo-btn" id="goHomeBtn" type="button" aria-label="Retour à l’accueil">
       <div class="logo-mark">🎬</div>
-      <div class="logo-title">ALLIEFLIX</div>
+      <div>
+        <div class="logo-title">ALLIEFLIX</div>
+        <div class="logo-subtitle">notre cinéma à deux</div>
+      </div>
     </button>
 
-    <div class="topbar-right">
-      <div class="pill">
-        <span class="tiny muted">Profil actif</span>
-        <select id="activeProfileSelect">
+    <div class="topbar-right v2-topbar-actions">
+      <button id="topQuickAddBtn" class="top-quick-add" type="button">＋ Ajouter</button>
+      <div class="profile-pill">
+        <span class="profile-dot" aria-hidden="true"></span>
+        <span class="tiny muted">Je suis</span>
+        <select id="activeProfileSelect" aria-label="Profil actif">
           <option value="Kathie">Kathie</option>
           <option value="Alyssia">Alyssia</option>
         </select>
       </div>
-      <div class="pill">🌊 Synchronisé entre Kathie & Alyssia</div>
     </div>
   </div>
 
-  <section id="homePage">
-    <div class="hero">
-      <div class="card">
-        <div class="hero-main">
-          <div class="hero-kicker">🎬 Votre cinéma à deux</div>
-          <h1 class="hero-title">AllieFlix</h1>
-          <p class="hero-text">
-            Votre salle de cinéma à deux. Classez vos films, gardez les favoris, notez chacun vos avis,
-            ajoutez vos sorties cinéma, enregistrez vos soirées communes, puis laissez une roulette plus futée choisir le programme.
-          </p>
+  <section id="homePage" class="home-v2">
+    <section class="home-hero-v2">
+      <div class="home-hero-copy">
+        <div class="eyebrow">🎞️ AllieFlix, version duo</div>
+        <h1 id="homeGreeting">On regarde quoi ce soir ?</h1>
+        <p>Tout votre cinéma au même endroit, sans parcours à rallonge. Un tirage, une envie, un film.</p>
+        <div class="home-hero-actions">
+          <button id="homeDrawBtn" class="primary home-main-cta" type="button"><span>🎲</span> Lancer un tirage</button>
+          <button id="homeLibraryBtn" class="secondary home-secondary-cta" type="button">📚 Ouvrir la bibliothèque</button>
+        </div>
+        <div class="home-mini-stats" aria-label="Résumé AllieFlix">
+          <button class="home-mini-stat" data-home-view="bibliotheque" data-home-filter="mustWatch" type="button">
+            <span class="home-mini-icon">⭐</span>
+            <strong id="homeMustWatchCount">0</strong>
+            <small>à voir absolument</small>
+          </button>
+          <button class="home-mini-stat" data-home-view="cinema" type="button">
+            <span class="home-mini-icon">🍿</span>
+            <strong id="homeCinemaCount">0</strong>
+            <small>au cinéma</small>
+          </button>
+          <button class="home-mini-stat" data-home-view="nosfilms" type="button">
+            <span class="home-mini-icon">🎬</span>
+            <strong id="homeTogetherCount">0</strong>
+            <small>vus ensemble</small>
+          </button>
         </div>
       </div>
 
-      <div class="hero-grid">
-  <div class="menu-card" data-home-view="tirage"><strong>🎲 Tirage</strong><span>Roulette sans popup, résultat visible directement sur la page.</span></div>
-  <div class="menu-card" data-home-view="ajout"><strong>➕ Ajouter</strong><span>Ajout de film maison ou cinéma avec image compressée.</span></div>
-  <div class="menu-card" data-home-view="bibliotheque"><strong>📚 Bibliothèque</strong><span>Catalogue d'affiches ou fiches détaillées.</span></div>
-  <div class="menu-card" data-home-view="cinema"><strong>🍿 Cinéma</strong><span>Les films à voir au cinéma, avec date de sortie et suivi.</span></div>
-  <div class="menu-card" data-home-view="stats"><strong>📊 Stats</strong><span>Vue complète du duo, notes, écarts et soirées.</span></div>
-  <div class="menu-card" data-home-view="nosfilms"><strong>🎞️ Nos films</strong><span>Tout ce que vous avez vu ensemble, maison ou cinéma.</span></div>
-</div>
+      <div class="home-spotlight" id="homeSpotlightCard">
+        <div id="homeSpotlightPoster" class="home-spotlight-poster"></div>
+        <div class="home-spotlight-gradient"></div>
+        <div class="home-spotlight-content">
+          <div class="spotlight-kicker">Votre prochaine obsession ?</div>
+          <h2 id="homeSpotlightTitle">Chargement de votre sélection…</h2>
+          <div id="homeSpotlightMeta" class="spotlight-meta"></div>
+          <button id="homeSpotlightBtn" class="spotlight-button" type="button">Voir la fiche</button>
+        </div>
       </div>
+    </section>
 
-    <section class="panel" id="homeCinemaAlerts" style="margin-bottom:18px;"></section>
+    <section id="homeCinemaAlerts" class="home-alert-zone"></section>
 
-    <div class="home-bottom">
-      <section class="panel">
-        <h2>Stats duo</h2>
+    <section class="home-section-v2">
+      <div class="section-heading-v2">
+        <div>
+          <span class="section-kicker">Le choix facile</span>
+          <h2>À voir absolument</h2>
+        </div>
+        <button class="text-action" data-home-view="bibliotheque" data-home-filter="mustWatch" type="button">Tout voir →</button>
+      </div>
+      <div id="homeMustWatchRail" class="movie-rail"></div>
+    </section>
+
+    <section class="home-section-v2">
+      <div class="section-heading-v2">
+        <div>
+          <span class="section-kicker">Votre histoire</span>
+          <h2>Derniers films vus ensemble</h2>
+        </div>
+        <button class="text-action" data-home-view="nosfilms" type="button">Nos films →</button>
+      </div>
+      <div id="homeRecentTogetherRail" class="movie-rail"></div>
+    </section>
+
+    <div class="home-bottom home-bottom-v2">
+      <section class="panel home-compact-panel">
+        <div class="section-heading-v2 compact">
+          <div><span class="section-kicker">En un coup d’œil</span><h2>Votre duo</h2></div>
+          <button class="text-action" data-home-view="stats" type="button">Détails →</button>
+        </div>
         <div id="homeStats" class="stats-grid"></div>
       </section>
 
-      <section class="panel">
-        <h2>Historique des tirages</h2>
-        <div id="homeHistory" class="history-list"></div>
+      <section class="panel home-compact-panel">
+        <div class="section-heading-v2 compact">
+          <div><span class="section-kicker">La roulette se souvient</span><h2>Derniers tirages</h2></div>
+        </div>
+        <div id="homeHistory" class="history-list home-history-v2"></div>
       </section>
     </div>
   </section>
 
   <section id="appPage" class="hidden">
-    <div class="app-nav">
-      <div class="nav-card active" data-view="tirage"><strong>🎲 Tirage</strong><span>Roulette et résultat dans la page.</span></div>
-      <div class="nav-card" data-view="ajout"><strong>➕ Ajouter</strong><span>Ajouter un film ou une catégorie.</span></div>
-      <div class="nav-card" data-view="bibliotheque"><strong>📚 Bibliothèque</strong><span>Catalogue d'affiches et fiches détaillées.</span></div>
-      <div class="nav-card" data-view="cinema"><strong>🍿 Cinéma</strong><span>Les films prévus pour le grand écran.</span></div>
-      <div class="nav-card" data-view="stats"><strong>📊 Stats</strong><span>Vue complète du duo.</span></div>
-      <div class="nav-card" data-view="nosfilms"><strong>🎞️ Nos films</strong><span>Films vus ensemble, maison ou cinéma.</span></div>
-    </div>
+    <nav class="app-nav" aria-label="Navigation principale">
+      <button class="nav-card active" data-view="tirage" type="button"><span class="nav-icon">🎲</span><strong>Tirage</strong></button>
+      <button class="nav-card" data-view="bibliotheque" type="button"><span class="nav-icon">📚</span><strong>Bibliothèque</strong></button>
+      <button class="nav-card" data-view="cinema" type="button"><span class="nav-icon">🍿</span><strong>Cinéma</strong></button>
+      <button class="nav-card" data-view="nosfilms" type="button"><span class="nav-icon">🎞️</span><strong>Nos films</strong></button>
+      <button class="nav-card" data-view="stats" type="button"><span class="nav-icon">📊</span><strong>Stats</strong></button>
+      <button class="nav-card" data-view="ajout" type="button"><span class="nav-icon">＋</span><strong>Ajouter</strong></button>
+    </nav>
 
     <div class="app-layout">
       <main class="stack">
         <section id="tirageView" class="panel">
           <div class="panel-header">
             <div>
-              <h2>Tirage intelligent</h2>
-              <div class="small muted">La roulette donne plus de chances aux non vus et aux favoris, et ignore les films marqués cinéma.</div>
+              <div class="view-kicker">🎲 Soirée film</div>
+              <h2 class="view-title">Laissez AllieFlix décider</h2>
+              <div class="small muted">Choisissez votre humeur. La roulette s’occupe du reste.</div>
             </div>
           </div>
 
           <div class="selector-shell">
             <div>
-              <div class="selector-title">Catégories du tirage</div>
-              <div class="selector-sub">Sélection compacte pour la roulette.</div>
+              <div class="selector-title">Envie d’un genre précis ?</div>
+              <div class="selector-sub">Optionnel, tous les genres sont sélectionnés par défaut.</div>
             </div>
-            <button id="toggleDrawCatsBtn" class="ghost" type="button">Afficher</button>
+            <button id="toggleDrawCatsBtn" class="ghost" type="button">Choisir</button>
           </div>
           <div id="drawCatsWrap" class="chip-cloud hidden"></div>
 
@@ -228,13 +278,14 @@
         <section id="bibliothequeView" class="panel hidden">
           <div class="panel-header">
             <div>
-              <h2>Bibliothèque</h2>
-              <div class="small muted">Catalogue maison + films cinéma déjà vus. Les films cinéma à venir restent dans l'onglet Cinéma.</div>
+              <div class="view-kicker">📚 Votre collection</div>
+              <h2 class="view-title">Bibliothèque</h2>
+              <div class="small muted">Trouvez un film en quelques secondes.</div>
             </div>
           </div>
 <div class="search-wrap" style="margin-bottom:14px;">
   <div style="position:relative;">
-  <input id="globalSearchInput" placeholder="Rechercher un titre, une plateforme, un résumé..." style="padding-right:44px;" />
+  <input id="globalSearchInput" placeholder="Rechercher un film, une plateforme…" style="padding-right:44px;" />
   <button id="clearSearchMiniBtn" type="button" class="ghost hidden" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 9px;border-radius:999px;">✕</button>
 </div>
   <button id="globalSearchBtn" class="primary" type="button">Chercher</button>
@@ -244,8 +295,8 @@
 
           <div class="selector-shell">
             <div>
-              <div class="selector-title">Catégories de la bibliothèque</div>
-              <div class="selector-sub">Seuls les films des catégories sélectionnées apparaissent.</div>
+              <div class="selector-title">Filtres avancés</div>
+              <div class="selector-sub">Genres et catégories.</div>
             </div>
             <button id="toggleLibraryCatsBtn" class="ghost" type="button">Afficher</button>
           </div>
@@ -278,8 +329,9 @@
         <section id="cinemaView" class="panel hidden">
           <div class="panel-header">
             <div>
-              <h2>Menu cinéma</h2>
-              <div class="small muted">Ici vivent uniquement les films encore prévus au cinéma. Une fois vus ensemble ou marqués comme ratés, ils quittent cette liste et restent accessibles dans la bibliothèque.</div>
+              <div class="view-kicker">🍿 Grand écran</div>
+              <h2 class="view-title">Prochaines séances</h2>
+              <div class="small muted">Seulement ce qu’il vous reste à voir au cinéma. Le reste est rangé dans la bibliothèque.</div>
             </div>
           </div>
 
@@ -296,8 +348,8 @@
         <section id="statsView" class="panel hidden">
           <div class="panel-header">
             <div>
-              <h2>Stats</h2>
-              <div class="small muted">Vue globale du duo.</div>
+              <div class="view-kicker">📊 Votre duo en chiffres</div>
+              <h2 class="view-title">Stats</h2>
             </div>
           </div>
           <div id="statsContent" class="stack"></div>
@@ -306,8 +358,9 @@
         <section id="nosfilmsView" class="panel hidden">
           <div class="panel-header">
             <div>
-              <h2>Nos films</h2>
-              <div class="small muted">Les films vus ensemble à la maison ou au cinéma.</div>
+              <div class="view-kicker">🎞️ Votre histoire cinéma</div>
+              <h2 class="view-title">Nos films</h2>
+              <div class="small muted">Tous les films que vous avez vraiment partagés.</div>
             </div>
           </div>
 
@@ -340,14 +393,34 @@
 
 <button id="scrollTopBtn" class="scroll-top-btn hidden" type="button">↑</button>
 
-<div class="mobile-nav">
-  <button data-mobile-view="tirage"><span class="icon">🎲</span><span>Tirage</span></button>
-  <button data-mobile-view="bibliotheque"><span class="icon">📚</span><span>Biblio</span></button>
-  <button data-mobile-view="cinema"><span class="icon">🍿</span><span>Cinéma</span></button>
-  <button data-mobile-view="stats"><span class="icon">📊</span><span>Stats</span></button>
-  <button data-mobile-view="nosfilms"><span class="icon">🎞️</span><span>Nos films</span></button>
-  <button data-mobile-view="ajout"><span class="icon">➕</span><span>Ajouter</span></button>
+<div class="mobile-nav" aria-label="Navigation mobile">
+  <button id="mobileHomeBtn" type="button"><span class="icon">⌂</span><span>Accueil</span></button>
+  <button data-mobile-view="tirage" type="button"><span class="icon">🎲</span><span>Tirage</span></button>
+  <button data-mobile-view="bibliotheque" type="button"><span class="icon">📚</span><span>Films</span></button>
+  <button data-mobile-view="cinema" type="button"><span class="icon">🍿</span><span>Cinéma</span></button>
+  <button id="mobileMoreBtn" type="button"><span class="icon">•••</span><span>Plus</span></button>
 </div>
+
+<div id="moreSheetBackdrop" class="sheet-backdrop hidden"></div>
+<section id="moreSheet" class="more-sheet hidden" aria-label="Plus d’options">
+  <div class="sheet-handle"></div>
+  <div class="sheet-head">
+    <div><span class="section-kicker">AllieFlix</span><h2>Plus d’options</h2></div>
+    <button id="closeMoreSheetBtn" class="sheet-close" type="button" aria-label="Fermer">✕</button>
+  </div>
+  <div class="more-sheet-grid">
+    <button data-extra-view="ajout" type="button"><span>➕</span><strong>Ajouter un film</strong><small>Maison ou cinéma</small></button>
+    <button data-extra-view="nosfilms" type="button"><span>🎞️</span><strong>Nos films</strong><small>Votre historique à deux</small></button>
+    <button data-extra-view="stats" type="button"><span>📊</span><strong>Statistiques</strong><small>Vos goûts en chiffres</small></button>
+  </div>
+</section>
+
+<div id="appBootLoader" class="app-boot-loader">
+  <div class="boot-logo">🎬</div>
+  <div class="boot-title">ALLIEFLIX</div>
+  <div class="boot-dots"><span></span><span></span><span></span></div>
+</div>
+
   <script type="module" src="./js/app.js"></script>
 </body>
 </html>

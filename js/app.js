@@ -43,6 +43,8 @@ highlightedMustWatch: null,
 editingComments: {},
 libraryScrollY: 0,
 statsDrilldown: null,
+  isDrawing: false,
+  spotlightFilm: null,
 };
 
   const els = {
@@ -106,18 +108,26 @@ filterMustWatchBtn: document.getElementById("filterMustWatchBtn"),
 filmTitle: document.getElementById("filmTitle"),
 scrollTopBtn: document.getElementById("scrollTopBtn"),
 titleSuggestions: document.getElementById("titleSuggestions"),
+    homeGreeting: document.getElementById("homeGreeting"),
+    homeMustWatchCount: document.getElementById("homeMustWatchCount"),
+    homeCinemaCount: document.getElementById("homeCinemaCount"),
+    homeTogetherCount: document.getElementById("homeTogetherCount"),
+    homeMustWatchRail: document.getElementById("homeMustWatchRail"),
+    homeRecentTogetherRail: document.getElementById("homeRecentTogetherRail"),
+    homeSpotlightPoster: document.getElementById("homeSpotlightPoster"),
+    homeSpotlightTitle: document.getElementById("homeSpotlightTitle"),
+    homeSpotlightMeta: document.getElementById("homeSpotlightMeta"),
+    homeSpotlightBtn: document.getElementById("homeSpotlightBtn"),
+    homeDrawBtn: document.getElementById("homeDrawBtn"),
+    homeLibraryBtn: document.getElementById("homeLibraryBtn"),
+    topQuickAddBtn: document.getElementById("topQuickAddBtn"),
+    mobileHomeBtn: document.getElementById("mobileHomeBtn"),
+    mobileMoreBtn: document.getElementById("mobileMoreBtn"),
+    moreSheet: document.getElementById("moreSheet"),
+    moreSheetBackdrop: document.getElementById("moreSheetBackdrop"),
+    closeMoreSheetBtn: document.getElementById("closeMoreSheetBtn"),
+    appBootLoader: document.getElementById("appBootLoader"),
   };
-els.globalSearchInput.addEventListener("input", () => {
-  const q = els.globalSearchInput.value.trim();
-
-  // Affiche / cache la croix
-  els.clearSearchMiniBtn.classList.toggle("hidden", !q);
-});
-els.clearSearchMiniBtn.addEventListener("click", () => {
-  els.globalSearchInput.value = "";
-  els.globalSearchInput.dispatchEvent(new Event("input"));
-});
-
   els.sortSelect.value = state.sortMode;
   els.activeProfileSelect.value = state.activeProfile;
   document.getElementById("filmAddedBy").value = state.activeProfile;
@@ -131,14 +141,26 @@ els.clearSearchMiniBtn.addEventListener("click", () => {
       .replace(/'/g,"&#039;");
   }
 
+  let toastTimer = null;
   function showToast(msg, isError = false) {
+    if (!els.toast) return;
     els.toast.textContent = msg;
     els.toast.style.background = isError
       ? "linear-gradient(135deg,#ff7d97,#ffb1c0)"
       : "linear-gradient(135deg,#32d6c6,#7ef6ef)";
     els.toast.style.color = isError ? "#2b0710" : "#042023";
+    els.toast.classList.toggle("toast-error", isError);
+    els.toast.classList.toggle("toast-success", !isError);
     els.toast.classList.remove("hidden");
-    setTimeout(() => els.toast.classList.add("hidden"), 2400);
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.add("hidden"), 2500);
+  }
+
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  function hideBootLoader() {
+    if (!els.appBootLoader || els.appBootLoader.classList.contains("is-ready")) return;
+    els.appBootLoader.classList.add("is-ready");
   }
 
   function formatDate(ms) {
@@ -240,6 +262,9 @@ function showHome() {
   els.homePage.style.display = "";
   els.appPage.classList.add("hidden");
   els.appPage.style.display = "none";
+  document.querySelectorAll(".mobile-nav button").forEach(btn => btn.classList.remove("active"));
+  els.mobileHomeBtn?.classList.add("active");
+  renderHomeExperience();
 }
 
  function showApp() {
@@ -435,6 +460,10 @@ function renderTitleSuggestions(results) {
   });
 }
   function setMainView(view){
+if (view === "home") {
+  showHome();
+  return;
+}
 state.mainView = view;
 localStorage.setItem("allieflix_main_view", view);
 if (view !== "bibliotheque" && view !== "cinema") {
@@ -448,6 +477,8 @@ localStorage.setItem("mainView", view);
     document.querySelectorAll(".mobile-nav button").forEach(btn => {
       btn.classList.toggle("active", btn.dataset.mobileView === view);
     });
+    els.mobileHomeBtn?.classList.remove("active");
+    document.body.dataset.view = view;
     els.tirageView.classList.toggle("hidden", view !== "tirage");
     els.ajoutView.classList.toggle("hidden", view !== "ajout");
     els.bibliothequeView.classList.toggle("hidden", view !== "bibliotheque");
@@ -539,6 +570,91 @@ const cinemaSeenTogether = all.filter(f =>
 </div>
   `;
 }
+
+  function renderHomeRail(target, films, emptyText) {
+    if (!target) return;
+    if (!films.length) {
+      target.innerHTML = `<div class="rail-empty">${escapeHtml(emptyText)}</div>`;
+      return;
+    }
+
+    target.innerHTML = films.map(f => {
+      const meta = isCinemaFilm(f)
+        ? (f.releaseDateMs ? formatDateOnly(f.releaseDateMs) : "Cinéma")
+        : (f.platform || getCategoryName(f.cat));
+      const posterStyle = f.imageUrl
+        ? `style="background-image:url('${escapeHtml(f.imageUrl)}')"`
+        : "";
+      return `
+        <button class="rail-card" type="button" onclick="window.openFilmDetails('${f.cat}','${f.id}')">
+          <span class="rail-poster" ${posterStyle}></span>
+          <span class="rail-gradient"></span>
+          <span class="rail-info"><strong>${escapeHtml(f.title)}</strong><small>${escapeHtml(meta || "Film")}</small></span>
+        </button>
+      `;
+    }).join("");
+  }
+
+  function getHomeSpotlightFilm() {
+    const all = getAllFilmsFlat();
+    const pools = [
+      all.filter(f => isHomeFilm(f) && f.mustWatch && !f.seenTogether),
+      all.filter(f => isHomeFilm(f) && !f.kathieSeen && !f.alyssiaSeen),
+      all.filter(f => isActiveCinemaFilm(f)),
+      [...all].sort((a,b)=>(b.updatedAtMs || b.createdAtMs || 0) - (a.updatedAtMs || a.createdAtMs || 0))
+    ];
+    const pool = pools.find(list => list.length) || [];
+    if (!pool.length) return null;
+    const daySeed = Math.floor(Date.now() / 86400000);
+    return pool[daySeed % pool.length];
+  }
+
+  function renderHomeExperience() {
+    const all = getAllFilmsFlat();
+    const mustWatch = all
+      .filter(f => f.mustWatch)
+      .sort((a,b)=>(b.updatedAtMs || b.createdAtMs || 0) - (a.updatedAtMs || a.createdAtMs || 0));
+    const together = all
+      .filter(f => f.seenTogether)
+      .sort((a,b)=>(b.seenTogetherAtMs || b.updatedAtMs || b.createdAtMs || 0) - (a.seenTogetherAtMs || a.updatedAtMs || a.createdAtMs || 0));
+    const activeCinema = all.filter(f => isActiveCinemaFilm(f));
+
+    if (els.homeGreeting) els.homeGreeting.textContent = `${state.activeProfile}, on regarde quoi ce soir ?`;
+    if (els.homeMustWatchCount) els.homeMustWatchCount.textContent = String(all.filter(f => f.mustWatch).length);
+    if (els.homeCinemaCount) els.homeCinemaCount.textContent = String(activeCinema.length);
+    if (els.homeTogetherCount) els.homeTogetherCount.textContent = String(together.length);
+
+    renderHomeRail(els.homeMustWatchRail, mustWatch.slice(0, 10), "Ajoutez des films à « À voir absolument » et ils apparaîtront ici.");
+    renderHomeRail(els.homeRecentTogetherRail, together.slice(0, 10), "Votre prochain film vu ensemble commencera cette petite pellicule.");
+
+    const spotlight = getHomeSpotlightFilm();
+    state.spotlightFilm = spotlight;
+    if (!spotlight) {
+      if (els.homeSpotlightPoster) els.homeSpotlightPoster.style.backgroundImage = "";
+      if (els.homeSpotlightTitle) els.homeSpotlightTitle.textContent = "Ajoutez votre premier film";
+      if (els.homeSpotlightMeta) els.homeSpotlightMeta.textContent = "Votre sélection du jour apparaîtra ici.";
+      if (els.homeSpotlightBtn) els.homeSpotlightBtn.classList.add("hidden");
+      return;
+    }
+
+    if (els.homeSpotlightPoster) {
+      els.homeSpotlightPoster.style.backgroundImage = spotlight.imageUrl ? `url("${spotlight.imageUrl}")` : "";
+    }
+    if (els.homeSpotlightTitle) els.homeSpotlightTitle.textContent = spotlight.title || "Votre film du jour";
+    if (els.homeSpotlightMeta) {
+      const parts = [
+        spotlight.platform || (isCinemaFilm(spotlight) ? "Cinéma" : "Maison"),
+        getCategoryName(spotlight.cat),
+        spotlight.mustWatch ? "⭐ À voir absolument" : "✨ Sélection du jour"
+      ];
+      els.homeSpotlightMeta.innerHTML = parts.map(part => `<span class="chip">${escapeHtml(part)}</span>`).join("");
+    }
+    if (els.homeSpotlightBtn) {
+      els.homeSpotlightBtn.classList.remove("hidden");
+      els.homeSpotlightBtn.dataset.cat = spotlight.cat;
+      els.homeSpotlightBtn.dataset.id = spotlight.id;
+    }
+  }
  
   function sortFilms(list, forcedMode = null){
     const mode = forcedMode || state.sortMode;
@@ -930,7 +1046,7 @@ function renderPosterCard(f){
       </div>
 
       ${f.imageUrl
-        ? `<img src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" loading="lazy" />`
+        ? `<img src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" loading="lazy" decoding="async" />`
         : `<div class="poster-fallback">Pas d'image</div>`
       }
       <div class="poster-overlay">
@@ -1013,7 +1129,7 @@ if (state.statsDrilldown === "commentsAlyssia") {
 >
         <div class="film-banner">
           ${f.imageUrl
-            ? `<img src="${escapeHtml(f.imageUrl)}" alt="Bandeau de ${escapeHtml(f.title)}" loading="lazy" />`
+            ? `<img src="${escapeHtml(f.imageUrl)}" alt="Bandeau de ${escapeHtml(f.title)}" loading="lazy" decoding="async" />`
             : `<div class="film-banner-fallback">Pas d'image de bandeau</div>`
           }
           <div class="film-banner-overlay"></div>
@@ -1033,7 +1149,7 @@ ${f.missed ? '<span class="chip missed">😔 Raté</span>' : ''}
 
         <div class="film-layout">
           <div class="poster-wrap">
-            ${f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" class="poster-large" loading="lazy" />` : `<div class="poster-large-placeholder">Pas d'image</div>`}
+            ${f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" class="poster-large" loading="lazy" decoding="async" />` : `<div class="poster-large-placeholder">Pas d'image</div>`}
             <div class="poster-glow"></div>
           </div>
 
@@ -1292,7 +1408,11 @@ function renderCinemaAlerts() {
     : `<div class="empty">Aucune sortie cinéma dans les 7 prochains jours.</div>`;
 
   if (els.cinemaAlerts) els.cinemaAlerts.innerHTML = html;
-  if (els.homeCinemaAlerts) els.homeCinemaAlerts.innerHTML = html;
+  if (els.homeCinemaAlerts) {
+    els.homeCinemaAlerts.innerHTML = alerts.length
+      ? `<div class="home-cinema-alert"><span>🍿</span><div><strong>${alerts.length === 1 ? "Une sortie arrive très vite" : `${alerts.length} sorties arrivent très vite`}</strong><small>${alerts.slice(0,2).map(f => escapeHtml(f.title)).join(" • ")}</small></div><button type="button" onclick="window.navigateAllieFlix('cinema')">Voir →</button></div>`
+      : "";
+  }
 }
 
  function renderCinema() {
@@ -1302,7 +1422,7 @@ function renderCinemaAlerts() {
     if (film && isActiveCinemaFilm(film)) {
       els.cinemaList.innerHTML = `
         <div class="control-strip" style="margin-bottom:14px;">
-          <button class="secondary" type="button" onclick="window.closeFocusedCinemaFilm()">← Retour à la liste cinéma</button>
+          <button class="secondary" type="button" onclick="window.closeFocusedCinemaFilm()">← Retour aux sorties cinéma</button>
         </div>
         ${renderFilmCard(film)}
       `;
@@ -1312,10 +1432,37 @@ function renderCinemaAlerts() {
 
   const list = getCinemaFilms();
   if (!list.length) {
-    els.cinemaList.innerHTML = '<div class="empty">Aucun film cinéma pour le moment.</div>';
+    els.cinemaList.innerHTML = '<div class="empty">Rien à l’affiche pour le moment. Les films vus ou ratés sont bien rangés dans votre bibliothèque.</div>';
     return;
   }
-  els.cinemaList.innerHTML = list.map(f => renderFilmCard(f)).join("");
+
+  let currentMonth = "";
+  const cards = list.map(f => {
+    const d = f.releaseDateMs ? new Date(f.releaseDateMs) : null;
+    const monthKey = d ? d.toLocaleDateString("fr-FR", { month:"long", year:"numeric" }) : "Date à définir";
+    const monthLabel = monthKey !== currentMonth ? `<div class="cinema-month-label">${escapeHtml(monthKey)}</div>` : "";
+    currentMonth = monthKey;
+    const day = d ? d.toLocaleDateString("fr-FR", { day:"2-digit" }) : "?";
+    const month = d ? d.toLocaleDateString("fr-FR", { month:"short" }).replace(".","") : "date";
+    const countdown = getReleaseCountdown(f.releaseDateMs);
+    return `${monthLabel}
+      <article class="cinema-timeline-card" onclick="window.openFilmDetails('${f.cat}','${f.id}')">
+        <div class="cinema-date-badge"><strong>${escapeHtml(day)}</strong><small>${escapeHtml(month)}</small></div>
+        ${f.imageUrl ? `<img class="cinema-thumb" src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" loading="lazy" decoding="async" />` : `<div class="cinema-thumb poster-fallback">🎬</div>`}
+        <div class="cinema-card-main">
+          <h3>${escapeHtml(f.title)}</h3>
+          <div class="cinema-card-meta">
+            ${countdown ? `<span class="chip countdown">⏳ ${escapeHtml(countdown)}</span>` : ""}
+            <span class="chip">📁 ${escapeHtml(getCategoryName(f.cat))}</span>
+            ${f.mustWatch ? '<span class="chip mustwatch">À voir absolument</span>' : ''}
+          </div>
+          <div class="cinema-card-summary">${escapeHtml(getShortSummary(f.summary || "", 150) || "Touchez la fiche pour voir les détails et marquer votre séance.")}</div>
+        </div>
+        <div class="cinema-card-arrow">→</div>
+      </article>`;
+  }).join("");
+
+  els.cinemaList.innerHTML = `<div class="cinema-timeline">${cards}</div>`;
 }
 
   function renderOurFilms() {
@@ -1539,8 +1686,8 @@ ${renderStatsDrilldownHtml()}
       els.drawResultSection.innerHTML = `
         <div class="draw-result-panel">
           <div class="draw-placeholder">
-            <div style="font-size:1.1rem;font-weight:900;margin-bottom:8px;">Le film tiré s'affichera ici</div>
-            <div class="small muted">Plus de popup. Le résultat reste visible directement dans la page.</div>
+            <div style="font-size:1.15rem;font-weight:900;margin-bottom:8px;">Prêtes à laisser le hasard choisir ?</div>
+            <div class="small muted">Choisissez un mode juste au-dessus. La petite machine AllieFlix fera tourner les affiches.</div>
           </div>
         </div>
       `;
@@ -1548,7 +1695,7 @@ ${renderStatsDrilldownHtml()}
     }
     const { film, label } = state.lastDrawResult;
     els.drawResultSection.innerHTML = `
-      <div class="draw-result-panel draw-anim">
+      <div class="draw-result-panel draw-anim final-reveal">
         <div class="draw-result-inner">
           <div>
             ${film.imageUrl
@@ -1581,8 +1728,8 @@ ${renderStatsDrilldownHtml()}
   }
 
   function updateSelectorButtons() {
-    els.toggleDrawCatsBtn.textContent = els.drawCatsWrap.classList.contains("hidden") ? "Afficher" : "Masquer";
-    els.toggleLibraryCatsBtn.textContent = els.libraryCatsWrap.classList.contains("hidden") ? "Afficher" : "Masquer";
+    els.toggleDrawCatsBtn.textContent = els.drawCatsWrap.classList.contains("hidden") ? "Choisir" : "Masquer";
+    els.toggleLibraryCatsBtn.textContent = els.libraryCatsWrap.classList.contains("hidden") ? "Filtres" : "Masquer";
   }
 
   function updateLibraryFilterButtons() {
@@ -1705,6 +1852,7 @@ function refreshUI() {
   renderCategorySelect();
   renderStatsCards(els.homeStats);
   renderStatsCards(els.sideStats);
+  if (state.mainView === "home") renderHomeExperience();
 
   if (typeof renderCinemaAlerts === "function") {
     renderCinemaAlerts();
@@ -1745,6 +1893,7 @@ function refreshUI() {
           state.allFilmsMap[cat.id] = snap.docs.map(d => ({ id: d.id, cat: cat.id, ...d.data() }));
           rebuildFilmsCache();
           scheduleRefreshUI();
+          setTimeout(hideBootLoader, 220);
         });
       }
     });
@@ -1959,6 +2108,7 @@ renderHistory(els.mobileHistoryList);
       ensureDefaultSelections();
       syncAllCategoryCounts();
       scheduleRefreshUI();
+      if (!state.categories.length) setTimeout(hideBootLoader, 220);
     });
   }
 
@@ -2071,24 +2221,51 @@ const payload = {
     }
   }
 
-  function draw(mode) {
+  async function draw(mode) {
+    if (state.isDrawing) return;
     if (!state.drawSelectedCats.length) { showToast("Choisis au moins une catégorie pour le tirage", true); return; }
     let pool = getAllFilmsFlat().filter(f => isHomeFilm(f) && state.drawSelectedCats.includes(f.cat));
     if (mode === "seen") pool = pool.filter(f => f.kathieSeen || f.alyssiaSeen);
-if (mode === "unseen") pool = pool.filter(f => !f.kathieSeen && !f.alyssiaSeen);
-if (mode === "favorites") pool = pool.filter(f => f.favorite);
-if (mode === "mustWatch") pool = pool.filter(f => f.mustWatch);
+    if (mode === "unseen") pool = pool.filter(f => !f.kathieSeen && !f.alyssiaSeen);
+    if (mode === "favorites") pool = pool.filter(f => f.favorite);
+    if (mode === "mustWatch") pool = pool.filter(f => f.mustWatch);
     if (!pool.length) { showToast("Aucun film disponible pour ce tirage", true); return; }
-    const film = pickWeightedFilm(pool);
+
     const label =
-  mode === "seen" ? "Déjà vus" :
-  mode === "unseen" ? "Non vus" :
-  mode === "favorites" ? "Favoris" :
-  mode === "mustWatch" ? "À voir absolument" :
-  "Vus + Non vus";
+      mode === "seen" ? "Déjà vus" :
+      mode === "unseen" ? "Non vus" :
+      mode === "favorites" ? "Favoris" :
+      mode === "mustWatch" ? "À voir absolument" :
+      "Vus + Non vus";
+
+    state.isDrawing = true;
+    document.querySelectorAll(".mode-btn").forEach(btn => btn.disabled = true);
+    const shuffled = [...pool].sort(() => Math.random() - .5);
+    const preview = shuffled.slice(0, Math.min(9, shuffled.length));
+
+    els.drawResultSection.innerHTML = `
+      <div class="draw-roulette-stage">
+        <div>
+          <div class="roulette-icon">🎞️</div>
+          <div class="roulette-label">AllieFlix mélange vos envies</div>
+          <div id="roulettePreviewTitle" class="roulette-title">${escapeHtml(preview[0]?.title || "Suspense…")}</div>
+        </div>
+      </div>`;
+    els.drawResultSection.scrollIntoView({ behavior:"smooth", block:"center" });
+
+    const previewTitle = document.getElementById("roulettePreviewTitle");
+    const steps = Math.max(10, preview.length * 2);
+    for (let i = 0; i < steps; i++) {
+      const sample = preview[i % preview.length] || pool[Math.floor(Math.random() * pool.length)];
+      if (previewTitle) previewTitle.textContent = sample.title || "…";
+      await sleep(58 + i * 7);
+    }
+
+    const film = pickWeightedFilm(pool);
     state.lastDrawResult = { film, label };
     renderDrawResult();
-    els.drawResultSection.scrollIntoView({ behavior:"smooth", block:"start" });
+    state.isDrawing = false;
+    document.querySelectorAll(".mode-btn").forEach(btn => btn.disabled = false);
     addDrawHistory(film, label).catch(error => { console.error(error); showToast("Le tirage a marché, mais pas l'historique", true); });
   }
 
@@ -2155,6 +2332,7 @@ hideTitleSuggestions();
       localStorage.setItem("allieflix_active_profile", state.activeProfile);
       if (!state.editingFilm) document.getElementById("filmAddedBy").value = state.activeProfile;
       showToast(`Profil actif : ${state.activeProfile}`);
+      renderHomeExperience();
     });
 
 window.addEventListener("scroll", () => {
@@ -2216,102 +2394,72 @@ els.filmTitle.addEventListener("blur", () => {
     els.toggleDrawCatsBtn.addEventListener("click", () => { els.drawCatsWrap.classList.toggle("hidden"); updateSelectorButtons(); });
     els.toggleLibraryCatsBtn.addEventListener("click", () => { els.libraryCatsWrap.classList.toggle("hidden"); updateSelectorButtons(); });
 
-document.getElementById("globalSearchBtn").addEventListener("click", () => {
+const runLibrarySearch = (navigate = false) => {
   state.globalSearchTerm = els.globalSearchInput.value.trim();
-  els.searchSuggestionBox.textContent = "";
   state.focusedFilm = null;
+  state.librarySelectedCats = state.categories.map(c => c.id);
+  if (navigate) setMainView("bibliotheque");
+  renderLibraryCategories();
+  renderFilms();
+};
 
-els.clearSearchMiniBtn.addEventListener("click", () => {
-  document.getElementById("clearGlobalSearchBtn").click();
-});
+const clearLibrarySearch = () => {
+  state.globalSearchTerm = "";
+  state.focusedFilm = null;
+  els.globalSearchInput.value = "";
+  els.clearSearchMiniBtn.classList.add("hidden");
+  els.searchSuggestionBox.textContent = "";
+  state.librarySelectedCats = state.categories.map(c => c.id);
+  if (state.mainView !== "bibliotheque") setMainView("bibliotheque");
+  renderLibraryCategories();
+  renderFilms();
+};
+
+let librarySearchTimer = null;
+document.getElementById("globalSearchBtn").addEventListener("click", () => runLibrarySearch(true));
+els.clearSearchMiniBtn.addEventListener("click", clearLibrarySearch);
+document.getElementById("clearGlobalSearchBtn").addEventListener("click", clearLibrarySearch);
 
 els.globalSearchInput.addEventListener("input", () => {
   const q = els.globalSearchInput.value.trim();
   els.clearSearchMiniBtn.classList.toggle("hidden", !q);
-});
-
-  state.librarySelectedCats = state.categories.map(c => c.id);
-
-  setMainView("bibliotheque");
-  renderLibraryCategories();
-  renderFilms();
-});
-els.globalSearchInput.addEventListener("input", () => {
-  const q = els.globalSearchInput.value.trim();
+  clearTimeout(librarySearchTimer);
 
   if (!q) {
     els.searchSuggestionBox.innerHTML = "";
     state.globalSearchTerm = "";
     state.focusedFilm = null;
-    renderFilms();
+    if (state.mainView === "bibliotheque") renderFilms();
     return;
   }
 
   const suggestions = getSearchSuggestions(q);
-
   els.searchSuggestionBox.innerHTML = suggestions.length
-    ? "Suggestions : " + suggestions.map(f => `
-        <span class="chip" style="cursor:pointer;" data-title="${escapeHtml(f.title)}">
-          ${escapeHtml(f.title)}
-        </span>
-      `).join(" ")
-    : "Aucun aperçu pour le moment.";
+    ? suggestions.map(f => `<button class="search-suggestion-chip" type="button" data-cat="${f.cat}" data-id="${f.id}">${escapeHtml(f.title)}</button>`).join("")
+    : `<span class="small muted">Continuez à écrire pour affiner la recherche.</span>`;
 
-  els.searchSuggestionBox.querySelectorAll(".chip").forEach(chip => {
+  els.searchSuggestionBox.querySelectorAll(".search-suggestion-chip").forEach(chip => {
     chip.addEventListener("click", () => {
-      const title = chip.dataset.title;
-      const film = getAllFilmsFlat().find(
-        f => (f.title || "").trim().toLowerCase() === title.trim().toLowerCase()
-      );
-
-      els.globalSearchInput.value = title;
-      state.globalSearchTerm = title;
-      state.librarySelectedCats = state.categories.map(c => c.id);
+      const film = getFilmByIds(chip.dataset.cat, chip.dataset.id);
+      if (!film) return;
+      els.globalSearchInput.value = film.title || "";
       els.searchSuggestionBox.innerHTML = "";
-
-      if (film && !isCinemaFilm(film)) {
-        state.focusedFilm = { cat: film.cat, id: film.id };
-        state.currentLibraryView = "list";
-        localStorage.setItem("allieflix_view_mode", state.currentLibraryView);
-        setMainView("bibliotheque");
-        renderLibraryCategories();
-        renderFilms();
-        return;
-      }
-
-      if (film && isCinemaFilm(film)) {
-        state.focusedFilm = null;
-        state.cinemaFilter = "all";
-        setMainView("cinema");
-        renderCinema();
-        return;
-      }
-
-      state.focusedFilm = null;
-      setMainView("bibliotheque");
-      renderLibraryCategories();
-      renderFilms();
+      window.openFilmDetails(film.cat, film.id);
     });
   });
+
+  librarySearchTimer = setTimeout(() => {
+    state.globalSearchTerm = q;
+    state.librarySelectedCats = state.categories.map(c => c.id);
+    if (state.mainView === "bibliotheque") renderFilms();
+  }, 240);
 });
+
 els.globalSearchInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") {
-    document.getElementById("globalSearchBtn").click();
-  }
+  if (e.key === "Enter") runLibrarySearch(true);
 });
 
-document.getElementById("clearGlobalSearchBtn").addEventListener("click", () => {
-  state.globalSearchTerm = "";
-  state.focusedFilm = null;
-  els.globalSearchInput.value = "";
-  els.searchSuggestionBox.textContent = "";
-
-  state.librarySelectedCats = state.categories.map(c => c.id);
-
-  setMainView("bibliotheque");
-  renderLibraryCategories();
-  renderFilms();
-});    els.sortSelect.addEventListener("change", () => {
+    els.sortSelect.addEventListener("change", () => {
       state.sortMode = els.sortSelect.value;
       localStorage.setItem("allieflix_sort_mode", state.sortMode);
       renderFilms(); renderCinema(); renderOurFilms();
@@ -2351,9 +2499,58 @@ els.filterMustWatchBtn.addEventListener("click", () => {
     document.getElementById("drawMustWatch").addEventListener("click", () => draw("mustWatch"));
 
     els.goHomeBtn.addEventListener("click", showHome);
-    document.querySelectorAll(".menu-card").forEach(el => el.addEventListener("click", () => setMainView(el.dataset.homeView)));
-    document.querySelectorAll(".nav-card").forEach(card => card.addEventListener("click", () => setMainView(card.dataset.view)));
-    document.querySelectorAll(".mobile-nav button").forEach(btn => btn.addEventListener("click", () => setMainView(btn.dataset.mobileView)));
+    els.homeDrawBtn?.addEventListener("click", () => setMainView("tirage"));
+    els.homeLibraryBtn?.addEventListener("click", () => setMainView("bibliotheque"));
+    const openAddFilmFlow = () => {
+      if (!state.editingFilm) resetFilmForm();
+      setMainView("ajout");
+      openFilmForm(false);
+      requestAnimationFrame(() => els.filmTitle?.focus());
+    };
+    els.topQuickAddBtn?.addEventListener("click", openAddFilmFlow);
+    els.homeSpotlightBtn?.addEventListener("click", () => {
+      const { cat, id } = els.homeSpotlightBtn.dataset;
+      if (cat && id) window.openFilmDetails(cat, id);
+    });
+
+    document.querySelectorAll("[data-home-view]").forEach(el => el.addEventListener("click", () => {
+      const view = el.dataset.homeView;
+      const filter = el.dataset.homeFilter;
+      if (filter) {
+        state.libraryFilter = filter;
+        localStorage.setItem("allieflix_library_filter", filter);
+      }
+      setMainView(view);
+      if (view === "bibliotheque") updateLibraryFilterButtons();
+    }));
+    document.querySelectorAll(".nav-card").forEach(card => card.addEventListener("click", () => {
+      if (card.dataset.view === "ajout") openAddFilmFlow();
+      else setMainView(card.dataset.view);
+    }));
+    document.querySelectorAll(".mobile-nav button[data-mobile-view]").forEach(btn => btn.addEventListener("click", () => setMainView(btn.dataset.mobileView)));
+    els.mobileHomeBtn?.addEventListener("click", showHome);
+
+    const openMoreSheet = () => {
+      els.moreSheet?.classList.remove("hidden");
+      els.moreSheetBackdrop?.classList.remove("hidden");
+      document.body.style.overflow = "hidden";
+    };
+    const closeMoreSheet = () => {
+      els.moreSheet?.classList.add("hidden");
+      els.moreSheetBackdrop?.classList.add("hidden");
+      document.body.style.overflow = "";
+    };
+    els.mobileMoreBtn?.addEventListener("click", openMoreSheet);
+    els.closeMoreSheetBtn?.addEventListener("click", closeMoreSheet);
+    els.moreSheetBackdrop?.addEventListener("click", closeMoreSheet);
+    document.querySelectorAll("[data-extra-view]").forEach(btn => btn.addEventListener("click", () => {
+      closeMoreSheet();
+      if (btn.dataset.extraView === "ajout") openAddFilmFlow();
+      else setMainView(btn.dataset.extraView);
+    }));
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && !els.moreSheet?.classList.contains("hidden")) closeMoreSheet();
+    });
 
     document.getElementById("filmImage").addEventListener("change", async e => {
       const file = e.target.files?.[0];
@@ -2400,7 +2597,7 @@ window.quickToggleFavorite = async (cat, id) => {
         updatedBy: state.activeProfile
       }
     );
-    showToast(!film.favorite ? "Ajouté aux favoris ❤️" : "Retiré des favoris");
+    showToast(!film.favorite ? "Cœur ajouté ❤️" : "Retiré des favoris");
   } catch (error) {
     console.error(error);
     showToast("Impossible de modifier les favoris", true);
@@ -2420,12 +2617,14 @@ window.quickToggleMustWatch = async (cat, id) => {
         updatedBy: state.activeProfile
       }
     );
-    showToast(!film.mustWatch ? "Ajouté à À voir absolument ⭐" : "Retiré de À voir absolument");
+    showToast(!film.mustWatch ? "Promu dans les incontournables ⭐" : "Retiré des incontournables");
   } catch (error) {
     console.error(error);
     showToast("Impossible de modifier À voir absolument", true);
   }
 };
+window.navigateAllieFlix = view => setMainView(view);
+
 window.closeFocusedFilm = () => {
   state.focusedFilm = null;
   renderFilms();
@@ -2543,21 +2742,22 @@ window.scrollTo({ top: 0, behavior: "auto" });
 
   window.toggleTogether = async (cat, id, value) => {
     try {
+      const film = getFilmByIds(cat, id);
       const now = Date.now();
       const normalized = normalizeSeenState({ kathieSeen: value, alyssiaSeen: value, seenTogether: value });
       await patchFilm(cat, id, {
         kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether,
         seenTogetherAtMs: value ? now : null, seenTogetherDateLabel: value ? formatDate(now) : ""
       });
-      showToast(value ? "Film marqué vu ensemble 🎬" : 'Statut "vu ensemble" retiré');
+      if (value && film && isCinemaFilm(film)) showToast("Une séance de plus dans votre histoire 🍿");
+      else showToast(value ? "Film ajouté à votre histoire à deux 🎬" : 'Statut "vu ensemble" retiré');
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
-  // NEW: toggle missed
   window.toggleMissed = async (cat, id, value) => {
     try {
       await patchFilm(cat, id, { missed: value });
-      showToast(value ? "Film marqué comme raté 😔" : "Statut raté retiré");
+      showToast(value ? "Raté, mais bien rangé dans la bibliothèque 😔" : "Le film revient dans vos sorties cinéma 🍿");
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -2761,3 +2961,4 @@ function restoreViewOnLoad(){
 }
 
 restoreViewOnLoad();
+setTimeout(hideBootLoader, 3500);

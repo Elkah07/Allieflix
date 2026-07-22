@@ -21,6 +21,7 @@ const state = {
 mainView: localStorage.getItem("allieflix_main_view") || "home",
   categories: [],
   allFilmsMap: {},
+  allFilmsFlatCache: [],
   allCategoryListeners: {},
   drawSelectedCats: [],
   librarySelectedCats: [],
@@ -99,8 +100,6 @@ filterFavoritesBtn: document.getElementById("filterFavoritesBtn"),
 filterMustWatchBtn: document.getElementById("filterMustWatchBtn"),
     cinemaAllBtn: document.getElementById("cinemaAllBtn"),
     cinemaUpcomingBtn: document.getElementById("cinemaUpcomingBtn"),
-    cinemaSeenBtn: document.getElementById("cinemaSeenBtn"),
-    cinemaMissedBtn: document.getElementById("cinemaMissedBtn"),
     ourFilmsAllBtn: document.getElementById("ourFilmsAllBtn"),
     ourFilmsHomeBtn: document.getElementById("ourFilmsHomeBtn"),
     ourFilmsCinemaBtn: document.getElementById("ourFilmsCinemaBtn"),
@@ -235,6 +234,8 @@ function getReleaseCountdown(ms) {
     els.uploadStatus.classList.toggle("hidden", !isLoading);
   }
 function showHome() {
+  state.mainView = "home";
+  localStorage.setItem("allieflix_main_view", "home");
   els.homePage.classList.remove("hidden");
   els.homePage.style.display = "";
   els.appPage.classList.add("hidden");
@@ -256,8 +257,12 @@ function showHome() {
     return (state.allFilmsMap[catId] || []).length;
   }
 
+  function rebuildFilmsCache() {
+    state.allFilmsFlatCache = Object.values(state.allFilmsMap).flat();
+  }
+
   function getAllFilmsFlat() {
-    return Object.values(state.allFilmsMap).flat();
+    return state.allFilmsFlatCache;
   }
 
   function getFilmByIds(cat, id) {
@@ -283,6 +288,10 @@ function isZeroRating(value) {
 
   function isCinemaFilm(f) {
     return f.type === "cinema";
+  }
+
+  function isActiveCinemaFilm(f) {
+    return isCinemaFilm(f) && !f.seenTogether && !f.missed;
   }
 
   function isHomeFilm(f) {
@@ -426,6 +435,7 @@ function renderTitleSuggestions(results) {
   });
 }
   function setMainView(view){
+state.mainView = view;
 localStorage.setItem("allieflix_main_view", view);
 if (view !== "bibliotheque" && view !== "cinema") {
   state.focusedFilm = null;
@@ -456,6 +466,7 @@ if (els.appSidebar) {
   }
 }
 
+    renderCurrentMainView();
   }
 
   function normalizeSeenState({ kathieSeen = false, alyssiaSeen = false, seenTogether = false }) {
@@ -564,6 +575,7 @@ if (mode === "rating_asc") {
     if (isHomeFilm(f)) return true;
 
     return isCinemaFilm(f) && (
+      f.missed ||
       f.seenTogether ||
       (f.kathieSeen && f.alyssiaSeen) ||
       f.kathieSeen ||
@@ -595,7 +607,7 @@ if (state.libraryFilter === "mustWatch") list = list.filter(f => f.mustWatch);
 }
 
   function getCinemaFilms() {
-  let list = getAllFilmsFlat().filter(f => isCinemaFilm(f));
+  let list = getAllFilmsFlat().filter(f => isActiveCinemaFilm(f));
 
   list.sort((a, b) => {
     const aDate = a.releaseDateMs || 9999999999999;
@@ -608,19 +620,7 @@ if (state.libraryFilter === "mustWatch") list = list.filter(f => f.mustWatch);
     now.setHours(0,0,0,0);
     const todayMs = now.getTime();
 
-    list = list.filter(f =>
-      (f.releaseDateMs || 0) >= todayMs &&
-      !f.seenTogether &&
-      !f.missed
-    );
-  }
-
-  if (state.cinemaFilter === "seen") {
-    list = list.filter(f => f.seenTogether || (f.kathieSeen && f.alyssiaSeen));
-  }
-
-  if (state.cinemaFilter === "missed") {
-    list = list.filter(f => f.missed === true);
+    list = list.filter(f => (f.releaseDateMs || 0) >= todayMs);
   }
 
   return list;
@@ -1299,7 +1299,7 @@ function renderCinemaAlerts() {
   if (state.focusedFilm) {
     const film = getFilmByIds(state.focusedFilm.cat, state.focusedFilm.id);
 
-    if (film && isCinemaFilm(film)) {
+    if (film && isActiveCinemaFilm(film)) {
       els.cinemaList.innerHTML = `
         <div class="control-strip" style="margin-bottom:14px;">
           <button class="secondary" type="button" onclick="window.closeFocusedCinemaFilm()">← Retour à la liste cinéma</button>
@@ -1603,8 +1603,9 @@ ${renderStatsDrilldownHtml()}
 }
 
   function updateCinemaFilterButtons() {
-    const mapping = { all: els.cinemaAllBtn, upcoming: els.cinemaUpcomingBtn, seen: els.cinemaSeenBtn, missed: els.cinemaMissedBtn };
+    const mapping = { all: els.cinemaAllBtn, upcoming: els.cinemaUpcomingBtn };
     Object.entries(mapping).forEach(([key, el]) => {
+      if (!el) return;
       el.classList.toggle("primary", state.cinemaFilter === key);
       el.classList.toggle("ghost", state.cinemaFilter !== key);
     });
@@ -1663,26 +1664,55 @@ function restoreTypingState(data) {
   }
 }
 
+function renderCurrentMainView() {
+  if (state.mainView === "bibliotheque") {
+    renderFilms();
+    return;
+  }
+  if (state.mainView === "cinema") {
+    renderCinema();
+    return;
+  }
+  if (state.mainView === "stats") {
+    renderStatsPage();
+    return;
+  }
+  if (state.mainView === "nosfilms") {
+    renderOurFilms();
+    return;
+  }
+  if (state.mainView === "tirage") {
+    renderDrawResult();
+  }
+}
+
+let refreshUITimer = null;
+
+function scheduleRefreshUI(delay = 70) {
+  if (refreshUITimer) clearTimeout(refreshUITimer);
+  refreshUITimer = setTimeout(() => {
+    refreshUITimer = null;
+    refreshUI();
+  }, delay);
+}
+
 function refreshUI() {
   const draft = saveDraftFields();
 
+  // Les petits éléments communs restent synchronisés.
   renderDrawCategories();
   renderLibraryCategories();
   renderCategorySelect();
-  renderFilms();
-  renderCinema();
-  renderOurFilms();
   renderStatsCards(els.homeStats);
   renderStatsCards(els.sideStats);
-  renderStatsPage();
-renderHistory(els.historyList);
-renderHistory(els.homeHistory);
-renderHistory(els.mobileHistoryList);
-  renderDrawResult();
 
   if (typeof renderCinemaAlerts === "function") {
     renderCinemaAlerts();
   }
+
+  // On ne reconstruit plus toutes les grosses pages à chaque changement Firebase.
+  // Seule la vue réellement affichée est rendue.
+  renderCurrentMainView();
 
   updateSelectorButtons();
   updateLibraryFilterButtons();
@@ -1696,18 +1726,25 @@ renderHistory(els.mobileHistoryList);
 }
 
   function syncAllCategoryCounts() {
+    let cacheNeedsRebuild = false;
+
     Object.keys(state.allCategoryListeners).forEach(catId => {
       if (!state.categories.some(c => c.id === catId)) {
         state.allCategoryListeners[catId]();
         delete state.allCategoryListeners[catId];
         delete state.allFilmsMap[catId];
+        cacheNeedsRebuild = true;
       }
     });
+
+    if (cacheNeedsRebuild) rebuildFilmsCache();
+
     state.categories.forEach(cat => {
       if (!state.allCategoryListeners[cat.id]) {
         state.allCategoryListeners[cat.id] = onSnapshot(collection(db, "categories", cat.id, "films"), snap => {
           state.allFilmsMap[cat.id] = snap.docs.map(d => ({ id: d.id, cat: cat.id, ...d.data() }));
-          refreshUI();
+          rebuildFilmsCache();
+          scheduleRefreshUI();
         });
       }
     });
@@ -1921,7 +1958,7 @@ renderHistory(els.mobileHistoryList);
       state.librarySelectedCats = state.librarySelectedCats.filter(id => state.categories.some(c => c.id === id));
       ensureDefaultSelections();
       syncAllCategoryCounts();
-      refreshUI();
+      scheduleRefreshUI();
     });
   }
 
@@ -2302,8 +2339,6 @@ els.filterMustWatchBtn.addEventListener("click", () => {
 
     els.cinemaAllBtn.addEventListener("click", () => { state.cinemaFilter = "all"; updateCinemaFilterButtons(); renderCinema(); });
     els.cinemaUpcomingBtn.addEventListener("click", () => { state.cinemaFilter = "upcoming"; updateCinemaFilterButtons(); renderCinema(); });
-    els.cinemaSeenBtn.addEventListener("click", () => { state.cinemaFilter = "seen"; updateCinemaFilterButtons(); renderCinema(); });
-    els.cinemaMissedBtn.addEventListener("click", () => { state.cinemaFilter = "missed"; updateCinemaFilterButtons(); renderCinema(); });
 
     els.ourFilmsAllBtn.addEventListener("click", () => { state.ourFilmsFilter = "all"; updateOurFilmsFilterButtons(); renderOurFilms(); });
     els.ourFilmsHomeBtn.addEventListener("click", () => { state.ourFilmsFilter = "home"; updateOurFilmsFilterButtons(); renderOurFilms(); });
@@ -2417,6 +2452,7 @@ window.closeFocusedCinemaFilm = () => {
   const shouldAppearInLibrary =
     isHomeFilm(film) ||
     (isCinemaFilm(film) && (
+      film.missed ||
       film.seenTogether ||
       (film.kathieSeen && film.alyssiaSeen) ||
       film.kathieSeen ||

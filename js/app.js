@@ -45,6 +45,14 @@ editingComments: {},
 libraryScrollY: 0,
 statsDrilldown: null,
   isDrawing: false,
+  lastDrawMode: "all",
+  drawRejectedIds: new Set(),
+  duelRound: [],
+  duelNextRound: [],
+  duelPair: [],
+  duelChampion: null,
+  duelRoundNumber: 1,
+  wrappedYear: Number(localStorage.getItem("allieflix_wrapped_year")) || new Date().getFullYear(),
 };
 
   const els = {
@@ -119,6 +127,17 @@ titleSuggestions: document.getElementById("titleSuggestions"),
     moreSheetBackdrop: document.getElementById("moreSheetBackdrop"),
     closeMoreSheetBtn: document.getElementById("closeMoreSheetBtn"),
     appBootLoader: document.getElementById("appBootLoader"),
+    homeMoodBanner: document.getElementById("homeMoodBanner"),
+    homeSagaSection: document.getElementById("homeSagaSection"),
+    duelView: document.getElementById("duelView"),
+    duelArena: document.getElementById("duelArena"),
+    duelCategorySelect: document.getElementById("duelCategorySelect"),
+    startDuelBtn: document.getElementById("startDuelBtn"),
+    duoView: document.getElementById("duoView"),
+    duoContent: document.getElementById("duoContent"),
+    wrappedView: document.getElementById("wrappedView"),
+    wrappedContent: document.getElementById("wrappedContent"),
+    wrappedYearSelect: document.getElementById("wrappedYearSelect"),
   };
   els.sortSelect.value = state.sortMode;
   els.activeProfileSelect.value = state.activeProfile;
@@ -490,7 +509,7 @@ if (view !== "bibliotheque" && view !== "cinema") {
       btn.classList.toggle("active", btn.dataset.mobileView === view);
     });
     els.mobileHomeBtn?.classList.remove("active");
-    els.mobileMoreBtn?.classList.toggle("active", ["ajout", "nosfilms", "stats"].includes(view));
+    els.mobileMoreBtn?.classList.toggle("active", ["ajout", "nosfilms", "stats", "duel", "duo", "wrapped"].includes(view));
     document.body.dataset.view = view;
     els.tirageView.classList.toggle("hidden", view !== "tirage");
     els.ajoutView.classList.toggle("hidden", view !== "ajout");
@@ -498,10 +517,14 @@ if (view !== "bibliotheque" && view !== "cinema") {
     els.cinemaView.classList.toggle("hidden", view !== "cinema");
     els.statsView.classList.toggle("hidden", view !== "stats");
     els.nosfilmsView.classList.toggle("hidden", view !== "nosfilms");
+    els.duelView?.classList.toggle("hidden", view !== "duel");
+    els.duoView?.classList.toggle("hidden", view !== "duo");
+    els.wrappedView?.classList.toggle("hidden", view !== "wrapped");
+    els.appPage?.classList.toggle("immersive-view", ["duel", "duo", "wrapped"].includes(view));
 const isMobile = window.innerWidth <= 980;
 
 if (els.appSidebar) {
-  if (isMobile) {
+  if (isMobile || ["duel", "duo", "wrapped"].includes(view)) {
     els.appSidebar.classList.add("hidden");
     els.appSidebar.style.display = "none";
   } else {
@@ -585,6 +608,408 @@ const cinemaSeenTogether = all.filter(f =>
   `;
 }
 
+
+  function getAmbientExperience() {
+    const now = new Date();
+    const month = now.getMonth();
+    const day = now.getDate();
+    const weekday = now.getDay();
+    const hour = now.getHours();
+
+    if (month === 9 && day === 31) return { icon:"🎃", title:"Soirée Halloween", text:"Les lumières s’éteignent. Les films d’horreur prennent le contrôle d’AllieFlix." };
+    if (month === 11 && [24,25].includes(day)) return { icon:"🎄", title:"Cinéma sous le plaid", text:"Ce soir, le programme officiel autorise les films de Noël, même les vraiment mauvais." };
+    if (month === 1 && day === 14) return { icon:"💌", title:"Saint-Valentin sur grand écran", text:"Une romance, un film qui fait pleurer ou un choix totalement chaotique. À vous de jouer." };
+    if (month === 3 && day === 4) return { icon:"✨", title:"Votre journée à vous", text:"Une date spéciale mérite peut-être un film qui finira dans votre histoire AllieFlix." };
+    if ((weekday === 5 || weekday === 6) && hour >= 17) return { icon:"🍿", title:"Le week-end a officiellement commencé", text:"Le canapé réclame un film. La roulette est prête à prendre une décision à votre place." };
+    if (weekday === 0 && hour >= 16) return { icon:"🌙", title:"Dimanche douceur", text:"Le moment parfait pour finir une saga, ressortir un favori ou découvrir quelque chose de nouveau." };
+    if (hour >= 21) return { icon:"🌌", title:"Session cinéma nocturne", text:"Les notifications peuvent attendre. AllieFlix a gardé quelques films pour la nuit." };
+    return { icon:"🎬", title:`Bienvenue ${state.activeProfile}`, text:"Votre cinéma privé est prêt : un tirage, un duel ou une prochaine sortie ?" };
+  }
+
+  function renderAmbientExperience() {
+    if (!els.homeMoodBanner) return;
+    const mood = getAmbientExperience();
+    els.homeMoodBanner.innerHTML = `
+      <span class="allie-mood-icon">${mood.icon}</span>
+      <div><strong>${escapeHtml(mood.title)}</strong><small>${escapeHtml(mood.text)}</small></div>
+      <button type="button" onclick="window.navigateAllieFlix('tirage')">Tirer un film →</button>
+    `;
+  }
+
+  function normalizeSagaText(value) {
+    return String(value || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[’']/g, " ")
+      .replace(/[^a-z0-9\s:-]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function inferSagaKey(title) {
+    const normalized = normalizeSagaText(title);
+    if (!normalized) return "";
+    const known = [
+      "harry potter", "scream", "conjuring", "insidious", "saw", "paranormal activity",
+      "destination finale", "final destination", "twilight", "hunger games", "john wick",
+      "fast and furious", "mission impossible", "jurassic", "avatar", "dune", "matrix",
+      "alien", "predator", "avengers", "iron man", "captain america", "thor", "deadpool",
+      "spider man", "guardians of the galaxy", "gardiens de la galaxie", "toy story", "shrek",
+      "frozen", "la reine des neiges", "moi moche et mechant", "minions", "creed", "rocky",
+      "pirates des caraibes", "le seigneur des anneaux", "lord of the rings", "hobbit"
+    ];
+    const knownMatch = known.find(key => normalized.includes(key));
+    if (knownMatch) return knownMatch;
+
+    let base = normalized.split(/\s[:\-–]\s/)[0]
+      .replace(/\b(chapitre|chapter|partie|part|episode|épisode|volume|vol)\s*[0-9ivx]+\b/g, "")
+      .replace(/\b[0-9ivx]+\b$/g, "")
+      .trim();
+    return base.split(" ").length >= 2 ? base : "";
+  }
+
+  function getSagaProgress() {
+    const groups = new Map();
+    getAllFilmsFlat().forEach(film => {
+      const key = inferSagaKey(film.title);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(film);
+    });
+
+    return [...groups.entries()]
+      .map(([key, films]) => {
+        const sorted = [...films].sort((a,b) => (Number(a.year)||9999) - (Number(b.year)||9999) || (a.title||"").localeCompare(b.title||"", "fr"));
+        const seen = sorted.filter(f => f.seenTogether || (f.kathieSeen && f.alyssiaSeen));
+        const unseen = sorted.filter(f => !(f.seenTogether || (f.kathieSeen && f.alyssiaSeen)));
+        return { key, films:sorted, seen, unseen, next:unseen[0] || null };
+      })
+      .filter(group => group.films.length >= 2 && group.seen.length > 0 && group.unseen.length > 0)
+      .sort((a,b) => (b.seen.length / b.films.length) - (a.seen.length / a.films.length));
+  }
+
+  function sagaDisplayName(group) {
+    const title = group.films[0]?.title || group.key;
+    const key = group.key;
+    if (["scream","conjuring","insidious","saw","twilight","avatar","dune","matrix","alien","predator","deadpool","shrek","creed","rocky"].includes(key)) {
+      return key.replace(/\b\w/g, c => c.toUpperCase());
+    }
+    return title.split(/\s[:\-–]\s/)[0];
+  }
+
+  function renderSagaRail() {
+    if (!els.homeSagaSection) return;
+    const sagas = getSagaProgress().slice(0,3);
+    if (!sagas.length) {
+      els.homeSagaSection.innerHTML = "";
+      return;
+    }
+    els.homeSagaSection.innerHTML = `
+      <div class="home-section-head">
+        <div><span class="section-kicker">▶ Continuer l’aventure</span><h2>Vos sagas en cours</h2></div>
+      </div>
+      <div class="saga-progress-grid">
+        ${sagas.map(group => {
+          const percent = Math.round((group.seen.length / group.films.length) * 100);
+          const next = group.next;
+          return `<button class="saga-progress-card" type="button" onclick="window.openFilmDetails('${next.cat}','${next.id}')">
+            <div class="saga-poster-stack">
+              ${group.films.slice(0,3).map((f,i) => f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="" style="--stack:${i}" loading="lazy" />` : "").join("")}
+            </div>
+            <div class="saga-progress-copy">
+              <span>${escapeHtml(sagaDisplayName(group))}</span>
+              <strong>${group.seen.length}/${group.films.length} vus</strong>
+              <div class="saga-progress-bar"><i style="width:${percent}%"></i></div>
+              <small>Prochain : ${escapeHtml(next.title)}</small>
+            </div>
+            <b>→</b>
+          </button>`;
+        }).join("")}
+      </div>`;
+  }
+
+  function calendarDayKey(ms) {
+    if (!ms) return "";
+    const d = new Date(ms);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  }
+
+  function getAchievements() {
+    const all = getAllFilmsFlat();
+    const ratedTogether = all.filter(f => f.ratingKathie !== null && f.ratingKathie !== undefined && f.ratingAlyssia !== null && f.ratingAlyssia !== undefined);
+    const exactMatches = ratedTogether.filter(f => Number(f.ratingKathie) === Number(f.ratingAlyssia)).length;
+    const vomits = all.reduce((n,f) => n + (Number(f.ratingKathie) === 0 ? 1 : 0) + (Number(f.ratingAlyssia) === 0 ? 1 : 0), 0);
+    const mutualFives = ratedTogether.filter(f => Number(f.ratingKathie) === 5 && Number(f.ratingAlyssia) === 5).length;
+    const comments = all.reduce((n,f) => n + (Array.isArray(f.comments) ? f.comments.length : 0), 0);
+    const horrorTogether = all.filter(f => f.seenTogether && /horreur|horror/i.test(getCategoryName(f.cat))).length;
+    const cinemaTogether = all.filter(f => f.seenTogether && isCinemaFilm(f)).length;
+    const together = all.filter(f => f.seenTogether).length;
+    const dayCounts = {};
+    all.filter(f => f.seenTogetherAtMs).forEach(f => {
+      const key = calendarDayKey(f.seenTogetherAtMs);
+      dayCounts[key] = (dayCounts[key] || 0) + 1;
+    });
+    const marathonMax = Math.max(0, ...Object.values(dayCounts));
+
+    return [
+      { icon:"🧠", title:"Même cerveau", desc:"Donner exactement la même note à 10 films.", value:exactMatches, target:10 },
+      { icon:"🍿", title:"Marathoniennes", desc:"Voir 3 films ensemble le même jour.", value:marathonMax, target:3 },
+      { icon:"🤢", title:"Aucun respect", desc:"Distribuer 10 notes 🤢 à vous deux.", value:vomits, target:10 },
+      { icon:"❤️", title:"Coup de cœur commun", desc:"Mettre toutes les deux 5/5 au même film.", value:mutualFives, target:1 },
+      { icon:"📝", title:"Critiques professionnelles", desc:"Écrire 100 commentaires sur vos films.", value:comments, target:100 },
+      { icon:"😱", title:"On aime souffrir", desc:"Voir 25 films d’horreur ensemble.", value:horrorTogether, target:25 },
+      { icon:"🎟️", title:"Habituées du grand écran", desc:"Voir 10 films ensemble au cinéma.", value:cinemaTogether, target:10 },
+      { icon:"🎬", title:"Cinéphiles inséparables", desc:"Atteindre 50 films vus ensemble.", value:together, target:50 },
+    ].map(item => ({ ...item, unlocked:item.value >= item.target, progress:Math.min(100, Math.round(item.value / item.target * 100)) }));
+  }
+
+  function getTopRatedCategory(person) {
+    const field = person === "Kathie" ? "ratingKathie" : "ratingAlyssia";
+    const groups = {};
+    getAllFilmsFlat().forEach(f => {
+      const value = f[field];
+      if (value === null || value === undefined || value === "") return;
+      const key = getCategoryName(f.cat);
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(Number(value));
+    });
+    return Object.entries(groups)
+      .filter(([,values]) => values.length >= 2)
+      .map(([name,values]) => ({ name, avg:values.reduce((a,b)=>a+b,0)/values.length, count:values.length }))
+      .sort((a,b) => b.avg-a.avg || b.count-a.count)[0] || null;
+  }
+
+  function renderAchievementsHtml() {
+    const achievements = getAchievements();
+    const unlocked = achievements.filter(a => a.unlocked).length;
+    return `
+      <section class="duo-section">
+        <div class="home-section-head"><div><span class="section-kicker">🏆 Succès</span><h2>${unlocked}/${achievements.length} débloqués</h2></div></div>
+        <div class="achievement-grid">
+          ${achievements.map(a => `<article class="achievement-card ${a.unlocked ? "unlocked" : "locked"}">
+            <div class="achievement-icon">${a.unlocked ? a.icon : "🔒"}</div>
+            <div><strong>${escapeHtml(a.title)}</strong><p>${escapeHtml(a.desc)}</p>
+              <div class="achievement-progress"><i style="width:${a.progress}%"></i></div>
+              <small>${Math.min(a.value,a.target)}/${a.target}${a.unlocked ? " · Débloqué ✨" : ""}</small>
+            </div>
+          </article>`).join("")}
+        </div>
+      </section>`;
+  }
+
+  function renderDuoPage() {
+    if (!els.duoContent) return;
+    const all = getAllFilmsFlat();
+    const rated = all.filter(f => f.ratingKathie !== null && f.ratingKathie !== undefined && f.ratingAlyssia !== null && f.ratingAlyssia !== undefined);
+    const close = rated.filter(f => Math.abs(Number(f.ratingKathie)-Number(f.ratingAlyssia)) <= 1).length;
+    const compatibility = rated.length ? Math.round(close / rated.length * 100) : 0;
+    const biggest = [...rated].sort((a,b) => Math.abs(Number(b.ratingKathie)-Number(b.ratingAlyssia)) - Math.abs(Number(a.ratingKathie)-Number(a.ratingAlyssia)))[0] || null;
+    const kRatings = all.map(f => f.ratingKathie).filter(v => v !== null && v !== undefined && v !== "").map(Number);
+    const aRatings = all.map(f => f.ratingAlyssia).filter(v => v !== null && v !== undefined && v !== "").map(Number);
+    const avgK = kRatings.length ? kRatings.reduce((a,b)=>a+b,0)/kRatings.length : 0;
+    const avgA = aRatings.length ? aRatings.reduce((a,b)=>a+b,0)/aRatings.length : 0;
+    const topK = getTopRatedCategory("Kathie");
+    const topA = getTopRatedCategory("Alyssia");
+    const vomitK = all.filter(f => Number(f.ratingKathie) === 0).length;
+    const vomitA = all.filter(f => Number(f.ratingAlyssia) === 0).length;
+
+    els.duoContent.innerHTML = `
+      <section class="compatibility-hero">
+        <div class="compatibility-ring" style="--score:${compatibility * 3.6}deg"><span>${compatibility}%</span><small>d’accord</small></div>
+        <div><span class="section-kicker">Votre compatibilité cinéma</span><h2>${compatibility >= 80 ? "Même cerveau, ou presque." : compatibility >= 60 ? "Le canapé survit encore à vos débats." : "Vos goûts aiment se battre."}</h2>
+          <p>Calculé sur ${rated.length} film${rated.length>1?"s":""} noté${rated.length>1?"s":""} par vous deux, avec un écart maximal d’un point pour être considérées d’accord.</p></div>
+      </section>
+      <div class="versus-grid">
+        <article class="versus-person kathie"><span>K</span><h3>Kathie</h3><strong>${avgK.toFixed(1)}/5</strong><small>note moyenne</small><p>Genre chouchou : <b>${escapeHtml(topK?.name || "À découvrir")}</b></p><p>🤢 distribués : <b>${vomitK}</b></p></article>
+        <div class="versus-badge">VS</div>
+        <article class="versus-person alyssia"><span>A</span><h3>Alyssia</h3><strong>${avgA.toFixed(1)}/5</strong><small>note moyenne</small><p>Genre chouchou : <b>${escapeHtml(topA?.name || "À découvrir")}</b></p><p>🤢 distribués : <b>${vomitA}</b></p></article>
+      </div>
+      ${biggest ? `<section class="biggest-disagreement" onclick="window.openFilmDetails('${biggest.cat}','${biggest.id}')">
+        ${biggest.imageUrl ? `<img src="${escapeHtml(biggest.imageUrl)}" alt="Affiche de ${escapeHtml(biggest.title)}" loading="lazy" />` : ""}
+        <div><span class="section-kicker">⚡ Votre plus gros désaccord</span><h2>${escapeHtml(biggest.title)}</h2><div class="disagreement-scores"><b>Kathie ${displayRating(biggest.ratingKathie)}/5</b><i>contre</i><b>Alyssia ${displayRating(biggest.ratingAlyssia)}/5</b></div><small>Cliquez pour rouvrir le dossier de ce scandale cinématographique.</small></div>
+      </section>` : '<div class="empty">Notez quelques films toutes les deux pour découvrir votre plus gros désaccord.</div>'}
+      ${renderAchievementsHtml()}
+    `;
+  }
+
+  function getFilmSeenYear(film) {
+    if (!film.seenTogether) return null;
+    const ms = film.seenTogetherAtMs || film.updatedAtMs || film.createdAtMs;
+    if (!ms) return null;
+    const year = new Date(ms).getFullYear();
+    return Number.isFinite(year) ? year : null;
+  }
+
+  function renderWrappedYearOptions() {
+    if (!els.wrappedYearSelect) return;
+    const years = [...new Set(getAllFilmsFlat().map(getFilmSeenYear).filter(Boolean))].sort((a,b)=>b-a);
+    const current = new Date().getFullYear();
+    if (!years.includes(current)) years.unshift(current);
+    if (!years.includes(state.wrappedYear)) state.wrappedYear = years[0] || current;
+    els.wrappedYearSelect.innerHTML = years.map(y => `<option value="${y}" ${y===state.wrappedYear?"selected":""}>${y}</option>`).join("");
+  }
+
+  function renderWrappedPage() {
+    if (!els.wrappedContent) return;
+    renderWrappedYearOptions();
+    const year = state.wrappedYear;
+    const films = getAllFilmsFlat().filter(f => getFilmSeenYear(f) === year);
+    if (!films.length) {
+      els.wrappedContent.innerHTML = `<div class="wrapped-empty"><span>🎞️</span><h2>Pas encore de bobine pour ${year}</h2><p>Les films vus ensemble cette année apparaîtront ici automatiquement.</p></div>`;
+      return;
+    }
+    const cinema = films.filter(isCinemaFilm).length;
+    const home = films.length - cinema;
+    const comments = films.reduce((n,f)=>n+(Array.isArray(f.comments)?f.comments.length:0),0);
+    const vomits = films.reduce((n,f)=>n+(Number(f.ratingKathie)===0?1:0)+(Number(f.ratingAlyssia)===0?1:0),0);
+    const favorites = films.filter(f=>f.favorite).length;
+    const categoryMap = {};
+    const monthMap = {};
+    films.forEach(f => {
+      const cat = getCategoryName(f.cat); categoryMap[cat]=(categoryMap[cat]||0)+1;
+      const ms = f.seenTogetherAtMs || f.updatedAtMs || f.createdAtMs;
+      const month = new Date(ms).toLocaleDateString("fr-FR", { month:"long" });
+      monthMap[month]=(monthMap[month]||0)+1;
+    });
+    const topCategory = Object.entries(categoryMap).sort((a,b)=>b[1]-a[1])[0];
+    const topMonth = Object.entries(monthMap).sort((a,b)=>b[1]-a[1])[0];
+    const ratedBoth = films.filter(f => f.ratingKathie !== null && f.ratingKathie !== undefined && f.ratingAlyssia !== null && f.ratingAlyssia !== undefined);
+    const biggest = [...ratedBoth].sort((a,b)=>Math.abs(Number(b.ratingKathie)-Number(b.ratingAlyssia))-Math.abs(Number(a.ratingKathie)-Number(a.ratingAlyssia)))[0] || null;
+    const favoriteFilm = [...films].filter(f=>averageRating(f)!==null).sort((a,b)=>averageRating(b)-averageRating(a))[0] || null;
+
+    els.wrappedContent.innerHTML = `
+      <section class="wrapped-hero"><span>ALLIEFLIX ${year}</span><h2>${films.length} film${films.length>1?"s":""}. Une seule histoire : la vôtre.</h2><p>${cinema} au cinéma · ${home} à la maison · ${comments} commentaire${comments>1?"s":""}</p></section>
+      <div class="wrapped-number-grid">
+        <article><span>🎬</span><strong>${films.length}</strong><small>films vus ensemble</small></article>
+        <article><span>🍿</span><strong>${cinema}</strong><small>sorties cinéma</small></article>
+        <article><span>❤️</span><strong>${favorites}</strong><small>favoris dans l’année</small></article>
+        <article><span>🤢</span><strong>${vomits}</strong><small>verdicts sans pitié</small></article>
+      </div>
+      <div class="wrapped-story-grid">
+        <article><span class="section-kicker">Genre de l’année</span><h3>${escapeHtml(topCategory?.[0] || "Mystère")}</h3><p>${topCategory?.[1] || 0} film${(topCategory?.[1]||0)>1?"s":""}</p></article>
+        <article><span class="section-kicker">Mois le plus cinéphile</span><h3>${escapeHtml(topMonth?.[0] || "Mystère")}</h3><p>${topMonth?.[1] || 0} film${(topMonth?.[1]||0)>1?"s":""} partagé${(topMonth?.[1]||0)>1?"s":""}</p></article>
+        ${favoriteFilm ? `<article class="clickable" onclick="window.openFilmDetails('${favoriteFilm.cat}','${favoriteFilm.id}')"><span class="section-kicker">Film le mieux noté</span><h3>${escapeHtml(favoriteFilm.title)}</h3><p>${averageRating(favoriteFilm).toFixed(1)}/5 de moyenne</p></article>` : ""}
+        ${biggest ? `<article class="clickable" onclick="window.openFilmDetails('${biggest.cat}','${biggest.id}')"><span class="section-kicker">Le débat de l’année</span><h3>${escapeHtml(biggest.title)}</h3><p>${displayRating(biggest.ratingKathie)} vs ${displayRating(biggest.ratingAlyssia)}</p></article>` : ""}
+      </div>
+      <section class="wrapped-poster-wall">${films.slice(0,12).map(f => f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="${escapeHtml(f.title)}" loading="lazy" />` : "").join("")}</section>
+      <div class="wrapped-final-line">${films.length} films, ${comments} commentaires, et probablement encore vingt minutes perdues à choisir le prochain. 🍿</div>
+    `;
+  }
+
+  function renderDuelCategoryOptions() {
+    if (!els.duelCategorySelect) return;
+    const current = els.duelCategorySelect.value || "all";
+    els.duelCategorySelect.innerHTML = `<option value="all">Tous les films</option>` + state.categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+    if ([...els.duelCategorySelect.options].some(o => o.value === current)) els.duelCategorySelect.value = current;
+  }
+
+  function getDuelScores() {
+    try { return JSON.parse(localStorage.getItem("allieflix_duel_scores") || "{}"); }
+    catch { return {}; }
+  }
+
+  function saveDuelWin(film) {
+    const scores = getDuelScores();
+    scores[film.id] = (scores[film.id] || 0) + 1;
+    localStorage.setItem("allieflix_duel_scores", JSON.stringify(scores));
+  }
+
+  function renderDuelPage() {
+    if (!els.duelArena) return;
+    if (state.duelChampion) {
+      const f = state.duelChampion;
+      els.duelArena.innerHTML = `<section class="duel-champion">
+        <div class="duel-crown">👑</div>
+        ${f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" />` : ""}
+        <span>Champion du tournoi</span><h2>${escapeHtml(f.title)}</h2>
+        <div class="control-strip"><button class="primary" type="button" onclick="window.startAllieDuel()">Rejouer</button><button class="secondary" type="button" onclick="window.openFilmDetails('${f.cat}','${f.id}')">Voir la fiche</button></div>
+      </section>`;
+      return;
+    }
+    if (!state.duelPair.length) {
+      els.duelArena.innerHTML = `<div class="duel-empty"><span>🥊</span><h3>Prêtes pour le face-à-face ?</h3><p>Choisissez une catégorie puis lancez le tournoi. À chaque manche, cliquez sur le film que vous préférez.</p></div>`;
+      return;
+    }
+    const [a,b] = state.duelPair;
+    els.duelArena.innerHTML = `<div class="duel-round-label">Manche ${state.duelRoundNumber} · choisissez votre gagnant</div><div class="duel-match">
+      ${[a,b].map((f,i) => `<button class="duel-film" type="button" onclick="window.chooseDuelWinner('${f.id}')">
+        <div class="duel-film-poster">${f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" />` : '<span>🎬</span>'}<i>Choisir</i></div>
+        <h3>${escapeHtml(f.title)}</h3><small>${escapeHtml(getCategoryName(f.cat))}</small>
+      </button>${i===0?'<div class="duel-vs">VS</div>':''}`).join("")}
+    </div>`;
+  }
+
+  function prepareNextDuelMatch() {
+    while (true) {
+      if (state.duelRound.length >= 2) {
+        state.duelPair = state.duelRound.splice(0,2);
+        renderDuelPage();
+        return;
+      }
+      if (state.duelRound.length === 1) state.duelNextRound.push(state.duelRound.shift());
+      if (state.duelNextRound.length === 1) {
+        state.duelChampion = state.duelNextRound[0];
+        state.duelPair = [];
+        renderDuelPage();
+        return;
+      }
+      if (!state.duelNextRound.length) {
+        state.duelPair = [];
+        renderDuelPage();
+        return;
+      }
+      state.duelRound = [...state.duelNextRound].sort(() => Math.random() - .5);
+      state.duelNextRound = [];
+      state.duelRoundNumber += 1;
+    }
+  }
+
+  function startAllieDuel() {
+    const cat = els.duelCategorySelect?.value || "all";
+    let pool = getAllFilmsFlat().filter(f => shouldAppearInLibrary(f) || isActiveCinemaFilm(f));
+    if (cat !== "all") pool = pool.filter(f => f.cat === cat);
+    if (pool.length < 2) { showToast("Il faut au moins deux films pour lancer un duel", true); return; }
+    pool = [...pool].sort(() => Math.random() - .5).slice(0,32);
+    state.duelRound = pool;
+    state.duelNextRound = [];
+    state.duelPair = [];
+    state.duelChampion = null;
+    state.duelRoundNumber = 1;
+    prepareNextDuelMatch();
+  }
+
+  function renderFilmMemorySection(f) {
+    if (!f.seenTogether) return "";
+    const place = f.memoryPlace || (isCinemaFilm(f) ? "cinema" : "");
+    return `<section class="film-memory-box">
+      <div class="film-memory-head"><span>💌</span><div><strong>Le souvenir de cette séance</strong><small>Gardez le petit détail que vous voudrez retrouver dans quelques années.</small></div></div>
+      <div class="memory-fields">
+        <select id="memoryPlace-${f.cat}-${f.id}">
+          <option value="" ${!place?"selected":""}>Où étiez-vous ?</option>
+          <option value="cinema" ${place==="cinema"?"selected":""}>🍿 Au cinéma</option>
+          <option value="kathie" ${place==="kathie"?"selected":""}>🏠 Chez Kathie</option>
+          <option value="alyssia" ${place==="alyssia"?"selected":""}>🏠 Chez Alyssia</option>
+          <option value="voyage" ${place==="voyage"?"selected":""}>🧳 En voyage</option>
+          <option value="autre" ${place==="autre"?"selected":""}>✨ Autre</option>
+        </select>
+        <input id="memoryLocation-${f.cat}-${f.id}" value="${escapeHtml(f.memoryLocation || "")}" placeholder="Ville, cinéma, canapé légendaire…" />
+      </div>
+      <textarea id="memoryNote-${f.cat}-${f.id}" placeholder="Un souvenir de cette soirée ?">${escapeHtml(f.memoryNote || "")}</textarea>
+      <button class="secondary" type="button" onclick="window.saveFilmMemory('${f.cat}','${f.id}')">💾 Enregistrer ce souvenir</button>
+    </section>`;
+  }
+
+  function renderDuoReviews(f) {
+    const kathie = getLatestCommentByAuthor(f, "Kathie");
+    const alyssia = getLatestCommentByAuthor(f, "Alyssia");
+    if (!kathie?.text && !alyssia?.text && f.ratingKathie == null && f.ratingAlyssia == null) return "";
+    return `<section class="duo-review-panel">
+      <article><span class="review-avatar kathie">K</span><div><strong>Kathie <b>${displayRating(f.ratingKathie)}/5</b></strong><p>${escapeHtml(kathie?.text || "Pas encore de critique écrite.")}</p></div></article>
+      <article><span class="review-avatar alyssia">A</span><div><strong>Alyssia <b>${displayRating(f.ratingAlyssia)}/5</b></strong><p>${escapeHtml(alyssia?.text || "Pas encore de critique écrite.")}</p></div></article>
+    </section>`;
+  }
+
   function renderHomeExperience() {
     const all = getAllFilmsFlat();
     const togetherCount = all.filter(f => f.seenTogether).length;
@@ -595,6 +1020,8 @@ const cinemaSeenTogether = all.filter(f =>
     if (els.homeMustWatchCount) els.homeMustWatchCount.textContent = String(mustWatchCount);
     if (els.homeCinemaCount) els.homeCinemaCount.textContent = String(activeCinemaCount);
     if (els.homeTogetherCount) els.homeTogetherCount.textContent = String(togetherCount);
+    renderAmbientExperience();
+    renderSagaRail();
   }
  
   function sortFilms(list, forcedMode = null){
@@ -1010,11 +1437,31 @@ function renderPosterCard(f){
   `;
 }
 
+
+  function renderOurFilmStoryCard(f) {
+    const date = f.seenTogetherDateLabel || formatDateOnly(f.seenTogetherAtMs);
+    const memory = String(f.memoryNote || "").trim();
+    return `<article class="our-film-story-card" onclick="window.openFilmDetails('${f.cat}','${f.id}')">
+      <div class="our-film-story-poster">${f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" loading="lazy" />` : '<span>🎬</span>'}</div>
+      <div class="our-film-story-main">
+        <div class="our-film-story-top"><div><span class="section-kicker">${isCinemaFilm(f) ? "🍿 Vu au cinéma" : "🏠 Vu ensemble"}</span><h3>${escapeHtml(f.title)}</h3></div><b>→</b></div>
+        <div class="film-meta">
+          ${date ? `<span class="chip">🗓️ ${escapeHtml(date)}</span>` : ""}
+          <span class="chip">🟣 ${displayRating(f.ratingKathie)}</span>
+          <span class="chip">🟢 ${displayRating(f.ratingAlyssia)}</span>
+          ${f.memoryLocation ? `<span class="chip">📍 ${escapeHtml(f.memoryLocation)}</span>` : ""}
+        </div>
+        ${memory ? `<p class="our-film-memory-preview">“${escapeHtml(getShortSummary(memory, 125))}”</p>` : `<p class="our-film-memory-preview muted">Ajoutez un souvenir à cette séance depuis la fiche du film.</p>`}
+      </div>
+    </article>`;
+  }
+
   function renderFilmCard(f, options = {}) {
   const key = `${f.cat}_${f.id}`;
   const bothSeen = f.kathieSeen && f.alyssiaSeen;
   const includeComments = !!options.includeComments;
   const clickable = !!options.clickable;
+  const premiumDetail = !!options.detail;
   const commentCount = Array.isArray(f.comments) ? f.comments.length : 0;
   const avgValue = averageRating(f);
   const avg = avgValue === null ? "—" : avgValue.toFixed(1);
@@ -1066,7 +1513,7 @@ if (state.statsDrilldown === "commentsAlyssia") {
 
   return `
     <article
-  class="film-card${f.missed ? ' is-missed' : ''}${clickable ? ' clickable' : ''}"
+  class="film-card${f.missed ? ' is-missed' : ''}${clickable ? ' clickable' : ' premium-film-card'}"
   ${clickable ? `onclick="if(event.target.closest('button,a,select,textarea,input,label')) return; window.openFilmDetails('${f.cat}','${f.id}')"` : ""}
 >
         <div class="film-banner">
@@ -1115,6 +1562,8 @@ ${f.missed ? '<span class="chip missed">😔 Raté</span>' : ''}
             </div>
 
 ${drilldownExtraHtml}
+${premiumDetail ? renderDuoReviews(f) : ""}
+${premiumDetail ? renderFilmMemorySection(f) : ""}
 
             <div class="status-row">
               <span class="status-pill ${f.kathieSeen ? '' : 'off'}">Kathie ${f.kathieSeen ? 'a vu ✅' : 'pas vu ❌'}</span>
@@ -1290,7 +1739,7 @@ ${includeComments ? `
   <div class="control-strip" style="margin-bottom:12px;">
     <button class="secondary" type="button" onclick="window.closeFocusedFilm()">← Retour à la liste</button>
   </div>
-  ${renderFilmCard(film, { includeComments:true })}
+  ${renderFilmCard(film, { includeComments:true, detail:true })}
 `;
     return;
   }
@@ -1329,7 +1778,7 @@ function renderCinemaAlerts() {
       const days = Math.round((target.getTime() - now.getTime()) / 86400000);
       return { ...f, days };
     })
-    .filter(f => f.days >= 0 && f.days <= 7)
+    .filter(f => f.days >= 0 && f.days <= 14)
     .sort((a,b) => a.days - b.days);
 
   const html = alerts.length
@@ -1347,7 +1796,7 @@ function renderCinemaAlerts() {
         `).join("")}
       </div>
     `
-    : `<div class="empty">Aucune sortie cinéma dans les 7 prochains jours.</div>`;
+    : `<div class="empty">Aucune sortie cinéma dans les 14 prochains jours.</div>`;
 
   if (els.cinemaAlerts) els.cinemaAlerts.innerHTML = html;
   if (els.homeCinemaAlerts) {
@@ -1366,7 +1815,7 @@ function renderCinemaAlerts() {
         <div class="control-strip" style="margin-bottom:14px;">
           <button class="secondary" type="button" onclick="window.closeFocusedCinemaFilm()">← Retour aux sorties cinéma</button>
         </div>
-        ${renderFilmCard(film)}
+        ${renderFilmCard(film, { includeComments:true, detail:true })}
       `;
       return;
     }
@@ -1378,33 +1827,47 @@ function renderCinemaAlerts() {
     return;
   }
 
-  let currentMonth = "";
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const sectionFor = ms => {
+    if (!ms) return "Date à définir";
+    const d = new Date(ms); d.setHours(0,0,0,0);
+    const diff = Math.round((d.getTime()-today.getTime())/86400000);
+    if (diff < 0) return "Déjà sorti";
+    if (diff <= 7) return "Cette semaine";
+    if (d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear()) return "Plus tard ce mois-ci";
+    return d.toLocaleDateString("fr-FR", { month:"long", year:"numeric" });
+  };
+
+  let currentSection = "";
   const cards = list.map(f => {
     const d = f.releaseDateMs ? new Date(f.releaseDateMs) : null;
-    const monthKey = d ? d.toLocaleDateString("fr-FR", { month:"long", year:"numeric" }) : "Date à définir";
-    const monthLabel = monthKey !== currentMonth ? `<div class="cinema-month-label">${escapeHtml(monthKey)}</div>` : "";
-    currentMonth = monthKey;
+    const section = sectionFor(f.releaseDateMs);
+    const sectionLabel = section !== currentSection ? `<div class="cinema-month-label cinema-section-label"><span>${escapeHtml(section)}</span></div>` : "";
+    currentSection = section;
     const day = d ? d.toLocaleDateString("fr-FR", { day:"2-digit" }) : "?";
     const month = d ? d.toLocaleDateString("fr-FR", { month:"short" }).replace(".","") : "date";
     const countdown = getReleaseCountdown(f.releaseDateMs);
-    return `${monthLabel}
-      <article class="cinema-timeline-card" onclick="window.openFilmDetails('${f.cat}','${f.id}')">
+    const diffDays = f.releaseDateMs ? Math.round((new Date(f.releaseDateMs).setHours(0,0,0,0)-today.getTime())/86400000) : null;
+    const urgent = diffDays !== null && diffDays >= 0 && diffDays <= 7;
+    return `${sectionLabel}
+      <article class="cinema-timeline-card ${urgent ? "cinema-urgent" : ""} ${f.mustWatch ? "cinema-priority" : ""}" onclick="window.openFilmDetails('${f.cat}','${f.id}')">
         <div class="cinema-date-badge"><strong>${escapeHtml(day)}</strong><small>${escapeHtml(month)}</small></div>
         ${f.imageUrl ? `<img class="cinema-thumb" src="${escapeHtml(f.imageUrl)}" alt="Affiche de ${escapeHtml(f.title)}" loading="lazy" decoding="async" />` : `<div class="cinema-thumb poster-fallback">🎬</div>`}
         <div class="cinema-card-main">
-          <h3>${escapeHtml(f.title)}</h3>
+          <div class="cinema-title-line"><h3>${escapeHtml(f.title)}</h3>${f.mustWatch ? '<span class="cinema-priority-label">⭐ À ne pas rater</span>' : ""}</div>
           <div class="cinema-card-meta">
             ${countdown ? `<span class="chip countdown">⏳ ${escapeHtml(countdown)}</span>` : ""}
             <span class="chip">📁 ${escapeHtml(getCategoryName(f.cat))}</span>
-            ${f.mustWatch ? '<span class="chip mustwatch">À voir absolument</span>' : ''}
           </div>
           <div class="cinema-card-summary">${escapeHtml(getShortSummary(f.summary || "", 150) || "Touchez la fiche pour voir les détails et marquer votre séance.")}</div>
         </div>
+        <button class="cinema-quick-star ${f.mustWatch ? "active" : ""}" type="button" aria-label="À voir absolument" onclick="event.stopPropagation(); window.quickToggleMustWatch('${f.cat}','${f.id}')">⭐</button>
         <div class="cinema-card-arrow">→</div>
       </article>`;
   }).join("");
 
-  els.cinemaList.innerHTML = `<div class="cinema-timeline">${cards}</div>`;
+  els.cinemaList.innerHTML = `<div class="cinema-live-intro"><span>🎟️</span><div><strong>${list.length} sortie${list.length>1?"s":""} dans votre radar</strong><small>Les films vus ensemble ou ratés quittent automatiquement cette liste.</small></div></div><div class="cinema-timeline">${cards}</div>`;
 }
 
   function renderOurFilms() {
@@ -1413,7 +1876,7 @@ function renderCinemaAlerts() {
       els.ourFilmsList.innerHTML = '<div class="empty">Aucun film vu ensemble pour le moment.</div>';
       return;
     }
-    els.ourFilmsList.innerHTML = list.map(f => renderFilmCard(f, { includeComments:true })).join("");
+    els.ourFilmsList.innerHTML = `<div class="our-film-story-list">${list.map(renderOurFilmStoryCard).join("")}</div>`;
   }
 
   function getPlatformStatsHtml(all) {
@@ -1666,8 +2129,8 @@ ${renderStatsDrilldownHtml()}
             </div>
             <p style="margin:0 0 14px;line-height:1.72;color:#e8fffc;">${escapeHtml(film.summary || "Pas de résumé.")}</p>
             <div class="control-strip">
-              <button class="warning" type="button" onclick="window.markDrawResultSeenTonight('${film.cat}','${film.id}')">🎬 Vu ce soir</button>
-              <button class="secondary" type="button" onclick="window.startEditFilm('${film.cat}','${film.id}')">✏️ Modifier la fiche</button>
+              <button class="warning" type="button" onclick="window.markDrawResultSeenTonight('${film.cat}','${film.id}')">🍿 On le regarde</button>
+              <button class="secondary" type="button" onclick="window.rejectDrawResult('${film.cat}','${film.id}')">🙄 Pas ce soir, relance</button>
               <button class="ghost" type="button" onclick="window.openFilmDetails('${film.cat}','${film.id}')">📖 Voir la fiche</button>
             </div>
           </div>
@@ -1734,6 +2197,18 @@ function renderCurrentMainView() {
   }
   if (state.mainView === "tirage") {
     renderDrawResult();
+    return;
+  }
+  if (state.mainView === "duel") {
+    renderDuelPage();
+    return;
+  }
+  if (state.mainView === "duo") {
+    renderDuoPage();
+    return;
+  }
+  if (state.mainView === "wrapped") {
+    renderWrappedPage();
   }
 }
 
@@ -1754,6 +2229,8 @@ function refreshUI() {
   renderDrawCategories();
   renderLibraryCategories();
   renderCategorySelect();
+  renderDuelCategoryOptions();
+  renderWrappedYearOptions();
   renderStatsCards(els.sideStats);
   if (state.mainView === "home") renderHomeExperience();
   if (els.categoryFormPanel && !els.categoryFormPanel.classList.contains("hidden")) renderCategoryManager();
@@ -2151,12 +2628,21 @@ async function addDrawHistory(film, mode){
 
   async function draw(mode) {
     if (state.isDrawing) return;
+    state.lastDrawMode = mode;
     if (!state.drawSelectedCats.length) { showToast("Choisis au moins une catégorie pour le tirage", true); return; }
-    let pool = getAllFilmsFlat().filter(f => isHomeFilm(f) && state.drawSelectedCats.includes(f.cat));
-    if (mode === "seen") pool = pool.filter(f => f.kathieSeen || f.alyssiaSeen);
-    if (mode === "unseen") pool = pool.filter(f => !f.kathieSeen && !f.alyssiaSeen);
-    if (mode === "favorites") pool = pool.filter(f => f.favorite);
-    if (mode === "mustWatch") pool = pool.filter(f => f.mustWatch);
+    const buildPool = () => {
+      let result = getAllFilmsFlat().filter(f => isHomeFilm(f) && state.drawSelectedCats.includes(f.cat));
+      if (mode === "seen") result = result.filter(f => f.kathieSeen || f.alyssiaSeen);
+      if (mode === "unseen") result = result.filter(f => !f.kathieSeen && !f.alyssiaSeen);
+      if (mode === "favorites") result = result.filter(f => f.favorite);
+      if (mode === "mustWatch") result = result.filter(f => f.mustWatch);
+      return result;
+    };
+    let pool = buildPool().filter(f => !state.drawRejectedIds.has(f.id));
+    if (!pool.length && state.drawRejectedIds.size) {
+      state.drawRejectedIds.clear();
+      pool = buildPool();
+    }
     if (!pool.length) { showToast("Aucun film disponible pour ce tirage", true); return; }
 
     const label =
@@ -2172,10 +2658,13 @@ async function addDrawHistory(film, mode){
     const preview = shuffled.slice(0, Math.min(9, shuffled.length));
 
     els.drawResultSection.innerHTML = `
-      <div class="draw-roulette-stage">
+      <div class="draw-roulette-stage premium-roulette">
+        <div class="roulette-countdown"><span>3</span><span>2</span><span>1</span></div>
+        <div class="roulette-reel">
+          ${preview.slice(0,5).map((f,i) => f.imageUrl ? `<img src="${escapeHtml(f.imageUrl)}" alt="" style="--reel-index:${i}" />` : `<div class="roulette-reel-fallback">🎬</div>`).join("")}
+        </div>
         <div>
-          <div class="roulette-icon">🎞️</div>
-          <div class="roulette-label">AllieFlix mélange vos envies</div>
+          <div class="roulette-label">Le destin cinématographique est en train de négocier</div>
           <div id="roulettePreviewTitle" class="roulette-title">${escapeHtml(preview[0]?.title || "Suspense…")}</div>
         </div>
       </div>`;
@@ -2440,6 +2929,12 @@ els.filterMustWatchBtn.addEventListener("click", () => {
     document.getElementById("drawUnseen").addEventListener("click", () => draw("unseen"));
     document.getElementById("drawFavorites").addEventListener("click", () => draw("favorites"));
     document.getElementById("drawMustWatch").addEventListener("click", () => draw("mustWatch"));
+    els.startDuelBtn?.addEventListener("click", startAllieDuel);
+    els.wrappedYearSelect?.addEventListener("change", () => {
+      state.wrappedYear = Number(els.wrappedYearSelect.value) || new Date().getFullYear();
+      localStorage.setItem("allieflix_wrapped_year", String(state.wrappedYear));
+      renderWrappedPage();
+    });
 
     els.goHomeBtn.addEventListener("click", showHome);
     els.homeDrawBtn?.addEventListener("click", () => setMainView("tirage"));
@@ -2630,6 +3125,35 @@ window.scrollTo({ top: 0, behavior: "auto" });
     setMainView("ajout");
     openFilmForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  window.startAllieDuel = startAllieDuel;
+
+  window.chooseDuelWinner = id => {
+    const winner = state.duelPair.find(f => f.id === id);
+    if (!winner) return;
+    saveDuelWin(winner);
+    state.duelNextRound.push(winner);
+    state.duelPair = [];
+    prepareNextDuelMatch();
+  };
+
+  window.saveFilmMemory = async (cat, id) => {
+    try {
+      const place = document.getElementById(`memoryPlace-${cat}-${id}`)?.value || "";
+      const location = document.getElementById(`memoryLocation-${cat}-${id}`)?.value.trim() || "";
+      const note = document.getElementById(`memoryNote-${cat}-${id}`)?.value.trim() || "";
+      await patchFilm(cat, id, {
+        memoryPlace: place,
+        memoryLocation: location,
+        memoryNote: note,
+        memoryUpdatedAtMs: Date.now()
+      });
+      showToast("Souvenir rangé dans votre bobine 💌");
+    } catch (error) {
+      console.error(error);
+      showToast("Impossible d’enregistrer ce souvenir", true);
+    }
   };
 
   window.toggleK = async (cat, id, value) => {
@@ -2876,6 +3400,13 @@ showToast("Commentaire modifié ✨");
     showToast("Erreur pendant la modification du commentaire", true);
   }
 };
+  window.rejectDrawResult = async (cat, id) => {
+    state.drawRejectedIds.add(id);
+    showToast("Très bien, lui il attendra son heure 😌");
+    state.lastDrawResult = null;
+    await draw(state.lastDrawMode || "all");
+  };
+
   window.markDrawResultSeenTonight = async (cat, id) => {
     try {
       const now = Date.now();

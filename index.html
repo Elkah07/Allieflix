@@ -34,6 +34,8 @@
   </div>
 
   <section id="homePage" class="home-v2 home-compact">
+    <section id="homeMoodBanner" class="allie-mood-banner" aria-live="polite"></section>
+
     <section class="compact-dashboard">
       <div class="compact-dashboard-main">
         <div class="eyebrow">🎬 Votre cinéma à deux</div>
@@ -67,6 +69,8 @@
 
     <section id="homeCinemaAlerts" class="home-alert-zone compact-home-alert"></section>
 
+    <section id="homeSagaSection" class="home-saga-section"></section>
+
     <section class="compact-shortcuts" aria-label="Raccourcis AllieFlix">
       <button class="compact-shortcut" data-home-view="ajout" type="button">
         <span class="compact-shortcut-icon">＋</span>
@@ -84,6 +88,18 @@
         <span class="compact-shortcut-icon">📊</span>
         <span><strong>Stats</strong><small>Votre duo en chiffres</small></span>
       </button>
+      <button class="compact-shortcut" data-home-view="duel" type="button">
+        <span class="compact-shortcut-icon">🥊</span>
+        <span><strong>Duel de films</strong><small>Un gagnant, aucun compromis</small></span>
+      </button>
+      <button class="compact-shortcut" data-home-view="duo" type="button">
+        <span class="compact-shortcut-icon">👩‍❤️‍👩</span>
+        <span><strong>Kathie vs Alyssia</strong><small>Accords, désaccords et succès</small></span>
+      </button>
+      <button class="compact-shortcut" data-home-view="wrapped" type="button">
+        <span class="compact-shortcut-icon">✨</span>
+        <span><strong>Notre année</strong><small>Le récap AllieFlix</small></span>
+      </button>
     </section>
   </section>
 
@@ -94,6 +110,8 @@
       <button class="nav-card" data-view="cinema" type="button"><span class="nav-icon">🍿</span><strong>Cinéma</strong></button>
       <button class="nav-card" data-view="nosfilms" type="button"><span class="nav-icon">🎞️</span><strong>Nos films</strong></button>
       <button class="nav-card" data-view="stats" type="button"><span class="nav-icon">📊</span><strong>Stats</strong></button>
+      <button class="nav-card" data-view="duel" type="button"><span class="nav-icon">🥊</span><strong>Duel</strong></button>
+      <button class="nav-card" data-view="duo" type="button"><span class="nav-icon">👩‍❤️‍👩</span><strong>Nous deux</strong></button>
     </nav>
 
     <div class="app-layout">
@@ -315,6 +333,44 @@
           <div id="cinemaList" class="film-list list"></div>
         </section>
 
+        <section id="duelView" class="panel hidden">
+          <div class="panel-header">
+            <div>
+              <div class="view-kicker">🥊 Face-à-face</div>
+              <h2 class="view-title">Duel de films</h2>
+              <div class="small muted">Deux affiches entrent. Une seule avance jusqu’au titre suprême.</div>
+            </div>
+          </div>
+          <div class="duel-toolbar">
+            <select id="duelCategorySelect" aria-label="Catégorie du duel"><option value="all">Tous les films</option></select>
+            <button id="startDuelBtn" class="primary" type="button">🥊 Lancer le tournoi</button>
+          </div>
+          <div id="duelArena" class="duel-arena"></div>
+        </section>
+
+        <section id="duoView" class="panel hidden">
+          <div class="panel-header">
+            <div>
+              <div class="view-kicker">👩‍❤️‍👩 Même canapé, goûts différents</div>
+              <h2 class="view-title">Kathie vs Alyssia</h2>
+              <div class="small muted">Votre compatibilité cinéma, vos plus gros débats et les trophées débloqués.</div>
+            </div>
+          </div>
+          <div id="duoContent"></div>
+        </section>
+
+        <section id="wrappedView" class="panel hidden">
+          <div class="panel-header">
+            <div>
+              <div class="view-kicker">✨ Votre année sur grand écran</div>
+              <h2 class="view-title">AllieFlix Wrapped</h2>
+              <div class="small muted">Votre année racontée par les films que vous avez partagés.</div>
+            </div>
+            <select id="wrappedYearSelect" aria-label="Année du récap"></select>
+          </div>
+          <div id="wrappedContent"></div>
+        </section>
+
         <section id="statsView" class="panel hidden">
           <div class="panel-header">
             <div>
@@ -382,6 +438,9 @@
     <button data-extra-view="ajout" type="button"><span>➕</span><strong>Ajouter un film</strong><small>Maison ou cinéma</small></button>
     <button data-extra-view="nosfilms" type="button"><span>🎞️</span><strong>Nos films</strong><small>Votre historique à deux</small></button>
     <button data-extra-view="stats" type="button"><span>📊</span><strong>Statistiques</strong><small>Vos goûts en chiffres</small></button>
+    <button data-extra-view="duel" type="button"><span>🥊</span><strong>Duel de films</strong><small>Élisez vos champions</small></button>
+    <button data-extra-view="duo" type="button"><span>👩‍❤️‍👩</span><strong>Kathie vs Alyssia</strong><small>Votre compatibilité cinéma</small></button>
+    <button data-extra-view="wrapped" type="button"><span>✨</span><strong>Notre année</strong><small>Votre récap AllieFlix</small></button>
   </div>
 </section>
 

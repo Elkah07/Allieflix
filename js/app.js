@@ -6,6 +6,7 @@ import {
   deleteDoc,
   onSnapshot,
   updateDoc,
+  writeBatch,
   query,
   orderBy,
   limit,
@@ -44,7 +45,6 @@ editingComments: {},
 libraryScrollY: 0,
 statsDrilldown: null,
   isDrawing: false,
-  spotlightFilm: null,
 };
 
   const els = {
@@ -71,8 +71,6 @@ searchSuggestionBox: document.getElementById("searchSuggestionBox"),
     sortSelect: document.getElementById("sortSelect"),
     historyList: document.getElementById("historyList"),
     mobileHistoryList: document.getElementById("mobileHistoryList"),
-    homeHistory: document.getElementById("homeHistory"),
-    homeStats: document.getElementById("homeStats"),
 sideStats: document.getElementById("sideStats"),
 appSidebar: document.getElementById("appSidebar"),
 films: document.getElementById("films"),
@@ -112,12 +110,6 @@ titleSuggestions: document.getElementById("titleSuggestions"),
     homeMustWatchCount: document.getElementById("homeMustWatchCount"),
     homeCinemaCount: document.getElementById("homeCinemaCount"),
     homeTogetherCount: document.getElementById("homeTogetherCount"),
-    homeMustWatchRail: document.getElementById("homeMustWatchRail"),
-    homeRecentTogetherRail: document.getElementById("homeRecentTogetherRail"),
-    homeSpotlightPoster: document.getElementById("homeSpotlightPoster"),
-    homeSpotlightTitle: document.getElementById("homeSpotlightTitle"),
-    homeSpotlightMeta: document.getElementById("homeSpotlightMeta"),
-    homeSpotlightBtn: document.getElementById("homeSpotlightBtn"),
     homeDrawBtn: document.getElementById("homeDrawBtn"),
     homeLibraryBtn: document.getElementById("homeLibraryBtn"),
     topQuickAddBtn: document.getElementById("topQuickAddBtn"),
@@ -255,9 +247,21 @@ function getReleaseCountdown(ms) {
   function setUploadLoading(isLoading) {
     els.uploadStatus.classList.toggle("hidden", !isLoading);
   }
+function resetPageScroll() {
+  els.scrollTopBtn?.classList.add("hidden");
+  requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "auto" }));
+}
+
+function closeMoreSheet() {
+  els.moreSheet?.classList.add("hidden");
+  els.moreSheetBackdrop?.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
 function showHome() {
   state.mainView = "home";
   localStorage.setItem("allieflix_main_view", "home");
+  closeMoreSheet();
   els.homePage.classList.remove("hidden");
   els.homePage.style.display = "";
   els.appPage.classList.add("hidden");
@@ -265,6 +269,7 @@ function showHome() {
   document.querySelectorAll(".mobile-nav button").forEach(btn => btn.classList.remove("active"));
   els.mobileHomeBtn?.classList.add("active");
   renderHomeExperience();
+  resetPageScroll();
 }
 
  function showApp() {
@@ -278,9 +283,6 @@ function showHome() {
     return state.categories.find(c => c.id === id)?.name || "Catégorie";
   }
 
-  function getFilmCount(catId) {
-    return (state.allFilmsMap[catId] || []).length;
-  }
 
   function rebuildFilmsCache() {
     state.allFilmsFlatCache = Object.values(state.allFilmsMap).flat();
@@ -291,7 +293,20 @@ function showHome() {
   }
 
   function getFilmByIds(cat, id) {
-    return getAllFilmsFlat().find(f => f.cat === cat && f.id === id) || null;
+    const films = getAllFilmsFlat();
+    return films.find(f => f.cat === cat && f.id === id)
+      || films.find(f => f.id === id)
+      || null;
+  }
+
+  function shouldAppearInLibrary(film) {
+    if (isHomeFilm(film)) return true;
+    return isCinemaFilm(film) && (
+      film.missed ||
+      film.seenTogether ||
+      film.kathieSeen ||
+      film.alyssiaSeen
+    );
   }
 
   function averageRating(f) {
@@ -387,9 +402,6 @@ function extractTrailerUrl(videos) {
  return trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : "";
 }
 
-function trailersafe(value) {
-  return String(value || "").trim();
-}
 
 function renderTitleSuggestions(results) {
   if (!results.length) {
@@ -466,9 +478,9 @@ if (view === "home") {
 }
 state.mainView = view;
 localStorage.setItem("allieflix_main_view", view);
+closeMoreSheet();
 if (view !== "bibliotheque" && view !== "cinema") {
   state.focusedFilm = null;
-localStorage.setItem("mainView", view);
 }
     showApp();
     document.querySelectorAll(".nav-card").forEach(card => {
@@ -478,6 +490,7 @@ localStorage.setItem("mainView", view);
       btn.classList.toggle("active", btn.dataset.mobileView === view);
     });
     els.mobileHomeBtn?.classList.remove("active");
+    els.mobileMoreBtn?.classList.toggle("active", ["ajout", "nosfilms", "stats"].includes(view));
     document.body.dataset.view = view;
     els.tirageView.classList.toggle("hidden", view !== "tirage");
     els.ajoutView.classList.toggle("hidden", view !== "ajout");
@@ -498,6 +511,7 @@ if (els.appSidebar) {
 }
 
     renderCurrentMainView();
+    resetPageScroll();
   }
 
   function normalizeSeenState({ kathieSeen = false, alyssiaSeen = false, seenTogether = false }) {
@@ -571,89 +585,16 @@ const cinemaSeenTogether = all.filter(f =>
   `;
 }
 
-  function renderHomeRail(target, films, emptyText) {
-    if (!target) return;
-    if (!films.length) {
-      target.innerHTML = `<div class="rail-empty">${escapeHtml(emptyText)}</div>`;
-      return;
-    }
-
-    target.innerHTML = films.map(f => {
-      const meta = isCinemaFilm(f)
-        ? (f.releaseDateMs ? formatDateOnly(f.releaseDateMs) : "Cinéma")
-        : (f.platform || getCategoryName(f.cat));
-      const posterStyle = f.imageUrl
-        ? `style="background-image:url('${escapeHtml(f.imageUrl)}')"`
-        : "";
-      return `
-        <button class="rail-card" type="button" onclick="window.openFilmDetails('${f.cat}','${f.id}')">
-          <span class="rail-poster" ${posterStyle}></span>
-          <span class="rail-gradient"></span>
-          <span class="rail-info"><strong>${escapeHtml(f.title)}</strong><small>${escapeHtml(meta || "Film")}</small></span>
-        </button>
-      `;
-    }).join("");
-  }
-
-  function getHomeSpotlightFilm() {
-    const all = getAllFilmsFlat();
-    const pools = [
-      all.filter(f => isHomeFilm(f) && f.mustWatch && !f.seenTogether),
-      all.filter(f => isHomeFilm(f) && !f.kathieSeen && !f.alyssiaSeen),
-      all.filter(f => isActiveCinemaFilm(f)),
-      [...all].sort((a,b)=>(b.updatedAtMs || b.createdAtMs || 0) - (a.updatedAtMs || a.createdAtMs || 0))
-    ];
-    const pool = pools.find(list => list.length) || [];
-    if (!pool.length) return null;
-    const daySeed = Math.floor(Date.now() / 86400000);
-    return pool[daySeed % pool.length];
-  }
-
   function renderHomeExperience() {
     const all = getAllFilmsFlat();
-    const mustWatch = all
-      .filter(f => f.mustWatch)
-      .sort((a,b)=>(b.updatedAtMs || b.createdAtMs || 0) - (a.updatedAtMs || a.createdAtMs || 0));
-    const together = all
-      .filter(f => f.seenTogether)
-      .sort((a,b)=>(b.seenTogetherAtMs || b.updatedAtMs || b.createdAtMs || 0) - (a.seenTogetherAtMs || a.updatedAtMs || a.createdAtMs || 0));
-    const activeCinema = all.filter(f => isActiveCinemaFilm(f));
+    const togetherCount = all.filter(f => f.seenTogether).length;
+    const activeCinemaCount = all.filter(f => isActiveCinemaFilm(f)).length;
+    const mustWatchCount = all.filter(f => f.mustWatch).length;
 
     if (els.homeGreeting) els.homeGreeting.textContent = `${state.activeProfile}, on regarde quoi ce soir ?`;
-    if (els.homeMustWatchCount) els.homeMustWatchCount.textContent = String(all.filter(f => f.mustWatch).length);
-    if (els.homeCinemaCount) els.homeCinemaCount.textContent = String(activeCinema.length);
-    if (els.homeTogetherCount) els.homeTogetherCount.textContent = String(together.length);
-
-    renderHomeRail(els.homeMustWatchRail, mustWatch.slice(0, 10), "Ajoutez des films à « À voir absolument » et ils apparaîtront ici.");
-    renderHomeRail(els.homeRecentTogetherRail, together.slice(0, 10), "Votre prochain film vu ensemble commencera cette petite pellicule.");
-
-    const spotlight = getHomeSpotlightFilm();
-    state.spotlightFilm = spotlight;
-    if (!spotlight) {
-      if (els.homeSpotlightPoster) els.homeSpotlightPoster.style.backgroundImage = "";
-      if (els.homeSpotlightTitle) els.homeSpotlightTitle.textContent = "Ajoutez votre premier film";
-      if (els.homeSpotlightMeta) els.homeSpotlightMeta.textContent = "Votre sélection du jour apparaîtra ici.";
-      if (els.homeSpotlightBtn) els.homeSpotlightBtn.classList.add("hidden");
-      return;
-    }
-
-    if (els.homeSpotlightPoster) {
-      els.homeSpotlightPoster.style.backgroundImage = spotlight.imageUrl ? `url("${spotlight.imageUrl}")` : "";
-    }
-    if (els.homeSpotlightTitle) els.homeSpotlightTitle.textContent = spotlight.title || "Votre film du jour";
-    if (els.homeSpotlightMeta) {
-      const parts = [
-        spotlight.platform || (isCinemaFilm(spotlight) ? "Cinéma" : "Maison"),
-        getCategoryName(spotlight.cat),
-        spotlight.mustWatch ? "⭐ À voir absolument" : "✨ Sélection du jour"
-      ];
-      els.homeSpotlightMeta.innerHTML = parts.map(part => `<span class="chip">${escapeHtml(part)}</span>`).join("");
-    }
-    if (els.homeSpotlightBtn) {
-      els.homeSpotlightBtn.classList.remove("hidden");
-      els.homeSpotlightBtn.dataset.cat = spotlight.cat;
-      els.homeSpotlightBtn.dataset.id = spotlight.id;
-    }
+    if (els.homeMustWatchCount) els.homeMustWatchCount.textContent = String(mustWatchCount);
+    if (els.homeCinemaCount) els.homeCinemaCount.textContent = String(activeCinemaCount);
+    if (els.homeTogetherCount) els.homeTogetherCount.textContent = String(togetherCount);
   }
  
   function sortFilms(list, forcedMode = null){
@@ -686,18 +627,6 @@ if (mode === "rating_asc") {
 
   function getVisibleFilms() {
   let list = [];
-
-  const shouldAppearInLibrary = (f) => {
-    if (isHomeFilm(f)) return true;
-
-    return isCinemaFilm(f) && (
-      f.missed ||
-      f.seenTogether ||
-      (f.kathieSeen && f.alyssiaSeen) ||
-      f.kathieSeen ||
-      f.alyssiaSeen
-    );
-  };
 
   if (state.globalSearchTerm.trim()) {
     const q = state.globalSearchTerm.trim().toLowerCase();
@@ -743,7 +672,12 @@ if (state.libraryFilter === "mustWatch") list = list.filter(f => f.mustWatch);
 }
 
   function getOurFilms() {
-    let list = sortFilms(getAllFilmsFlat().filter(f => f.seenTogether), "recent");
+    let list = getAllFilmsFlat()
+      .filter(f => f.seenTogether)
+      .sort((a, b) =>
+        (b.seenTogetherAtMs || b.updatedAtMs || b.createdAtMs || 0) -
+        (a.seenTogetherAtMs || a.updatedAtMs || a.createdAtMs || 0)
+      );
     if (state.ourFilmsFilter === "home") list = list.filter(f => isHomeFilm(f));
     if (state.ourFilmsFilter === "cinema") list = list.filter(f => isCinemaFilm(f));
     return list;
@@ -755,7 +689,9 @@ if (state.libraryFilter === "mustWatch") list = list.filter(f => f.mustWatch);
       container.innerHTML = '<div class="empty">Aucune catégorie pour le moment.</div>';
       return;
     }
-    const sourceFilms = getAllFilmsFlat().filter(f => isHomeFilm(f));
+    const sourceFilms = getAllFilmsFlat().filter(f =>
+      mode === "draw" ? isHomeFilm(f) : shouldAppearInLibrary(f)
+    );
     const allSelected = selectedArray.length === state.categories.length && state.categories.length > 0;
     container.innerHTML =
       `<label class="filter-chip ${allSelected ? "active" : ""}">
@@ -809,7 +745,7 @@ function renderCategoryManager() {
   }
 
   els.categoryManageList.innerHTML = state.categories.map(cat => {
-    const filmCount = (state.allFilmsMap[cat.id] || []).filter(f => isHomeFilm(f)).length;
+    const filmCount = (state.allFilmsMap[cat.id] || []).length;
 
     return `
       <div class="category-manager-item">
@@ -896,9 +832,19 @@ function getLatestCommentTimestampByAuthor(film, author) {
 
   return Math.max(
     ...matches.map(c =>
-      Number(c.createdAtMs || c.updatedAtMs || c.dateMs || 0)
+      Number(c.editedAtMs || c.updatedAtMs || c.createdAtMs || c.dateMs || 0)
     )
   );
+}
+
+function getLatestCommentByAuthor(film, author) {
+  if (!Array.isArray(film.comments)) return null;
+  return film.comments
+    .filter(c => c.author === author)
+    .sort((a, b) =>
+      Number(b.editedAtMs || b.updatedAtMs || b.createdAtMs || b.dateMs || 0) -
+      Number(a.editedAtMs || a.updatedAtMs || a.createdAtMs || a.dateMs || 0)
+    )[0] || null;
 }
 
 function getStatsDrilldownFilms() {
@@ -1093,9 +1039,7 @@ if (state.statsDrilldown === "sameRating") {
 }
 
 if (state.statsDrilldown === "commentsKathie") {
-  const comment = Array.isArray(f.comments)
-    ? f.comments.find(c => c.author === "Kathie")
-    : null;
+  const comment = getLatestCommentByAuthor(f, "Kathie");
 
   if (comment?.text) {
     drilldownExtraHtml = `
@@ -1108,9 +1052,7 @@ if (state.statsDrilldown === "commentsKathie") {
 }
 
 if (state.statsDrilldown === "commentsAlyssia") {
-  const comment = Array.isArray(f.comments)
-    ? f.comments.find(c => c.author === "Alyssia")
-    : null;
+  const comment = getLatestCommentByAuthor(f, "Alyssia");
 
   if (comment?.text) {
     drilldownExtraHtml = `
@@ -1497,18 +1439,25 @@ function renderHistory(targetEl){
     return;
   }
 
-  targetEl.innerHTML = state.drawHistory.map(item => `
-    <div
-      class="history-item clickable-history"
-      ${item.cat && item.filmId ? `onclick="window.openFilmDetails('${item.cat}','${item.filmId}')"` : ""}
-      title="${item.cat && item.filmId ? "Ouvrir la fiche" : "Ancien tirage sans lien"}"
-    >
-      <strong>${escapeHtml(item.title)}</strong>
-      <div class="small muted">
-        ${escapeHtml(item.mode || "")}${item.categoryName ? " • " + escapeHtml(item.categoryName) : ""}${item.timeLabel ? " • " + escapeHtml(item.timeLabel) : ""}
+  targetEl.innerHTML = state.drawHistory.map(item => {
+    const linkedFilm = item.filmId ? getFilmByIds(item.cat, item.filmId) : null;
+    const currentCat = linkedFilm?.cat || item.cat || "";
+    const currentCategoryName = linkedFilm ? getCategoryName(linkedFilm.cat) : item.categoryName;
+    const canOpen = !!(currentCat && item.filmId && linkedFilm);
+
+    return `
+      <div
+        class="history-item ${canOpen ? "clickable-history" : ""}"
+        ${canOpen ? `onclick="window.openFilmDetails('${currentCat}','${item.filmId}')"` : ""}
+        title="${canOpen ? "Ouvrir la fiche" : "Ancien tirage sans lien"}"
+      >
+        <strong>${escapeHtml(item.title)}</strong>
+        <div class="small muted">
+          ${escapeHtml(item.mode || "")}${currentCategoryName ? " • " + escapeHtml(currentCategoryName) : ""}${item.timeLabel ? " • " + escapeHtml(item.timeLabel) : ""}
+        </div>
       </div>
-    </div>
-  `).join("");
+    `;
+  }).join("");
 }
 
   function renderStatsPage(){
@@ -1523,8 +1472,8 @@ const alyssiaAdds = all.filter(f => (f.createdBy || f.addedBy) === "Alyssia").le
     const cinemaCount = all.filter(f => isCinemaFilm(f)).length;
     const cinemaSeenTogether = all.filter(f => isCinemaFilm(f) && f.seenTogether).length;
     const cinemaMissed = all.filter(f => isCinemaFilm(f) && f.missed).length;
-    const topRated = sortFilms([...all], "rating_desc").slice(0,5);
-    const recentEdits = sortFilms([...all].filter(f => f.updatedAtMs), "recent").slice(0,5);
+    const topRated = sortFilms(all.filter(f => averageRating(f) !== null), "rating_desc").slice(0,5);
+    const recentEdits = [...all].filter(f => f.updatedAtMs).sort((a,b)=>(b.updatedAtMs||0)-(a.updatedAtMs||0)).slice(0,5);
 const kathieCommentsCount = all.reduce((sum, f) => {
   const comments = Array.isArray(f.comments) ? f.comments : [];
   return sum + comments.filter(c => c.author === "Kathie").length;
@@ -1571,7 +1520,7 @@ const alyssiaTrashCount = all.filter(f => isZeroRating(f.ratingAlyssia)).length;
   const ratedBoth = all.filter(f => {
     const hasK = f.ratingKathie !== null && f.ratingKathie !== undefined && f.ratingKathie !== "";
     const hasA = f.ratingAlyssia !== null && f.ratingAlyssia !== undefined && f.ratingAlyssia !== "";
-    return hasK && hasA;
+    return hasK && hasA && !Number.isNaN(Number(f.ratingKathie)) && !Number.isNaN(Number(f.ratingAlyssia));
   });
 
   if (!ratedBoth.length) return "0.0";
@@ -1583,7 +1532,7 @@ const alyssiaTrashCount = all.filter(f => isZeroRating(f.ratingAlyssia)).length;
   return gap.toFixed(1);
 })();
 
-    const lastTogether = sortFilms([...all].filter(f => f.seenTogetherAtMs), "recent").slice(0,5);
+    const lastTogether = [...all].filter(f => f.seenTogetherAtMs).sort((a,b)=>(b.seenTogetherAtMs||0)-(a.seenTogetherAtMs||0)).slice(0,5);
 
     els.statsContent.innerHTML = `
   <div class="stats-grid">
@@ -1766,51 +1715,6 @@ ${renderStatsDrilldownHtml()}
     });
   }
 
-function captureTypingState() {
-  const active = document.activeElement;
-
-  const data = {
-    activeId: active?.id || "",
-    selectionStart: typeof active?.selectionStart === "number" ? active.selectionStart : null,
-    selectionEnd: typeof active?.selectionEnd === "number" ? active.selectionEnd : null,
-    values: {}
-  };
-
-  document.querySelectorAll("input, textarea, select").forEach(el => {
-    if (el.id && el.type !== "file") {
-      data.values[el.id] = el.value;
-    }
-  });
-
-  return data;
-}
-
-function restoreTypingState(data) {
-  if (!data) return;
-
-  Object.entries(data.values || {}).forEach(([id, value]) => {
-    const el = document.getElementById(id);
-    if (el && el.type !== "file") {
-      el.value = value;
-    }
-  });
-
-  if (data.activeId) {
-    const active = document.getElementById(data.activeId);
-    if (active) {
-      active.focus();
-
-      if (
-        data.selectionStart !== null &&
-        data.selectionEnd !== null &&
-        typeof active.setSelectionRange === "function"
-      ) {
-        active.setSelectionRange(data.selectionStart, data.selectionEnd);
-      }
-    }
-  }
-}
-
 function renderCurrentMainView() {
   if (state.mainView === "bibliotheque") {
     renderFilms();
@@ -1850,9 +1754,9 @@ function refreshUI() {
   renderDrawCategories();
   renderLibraryCategories();
   renderCategorySelect();
-  renderStatsCards(els.homeStats);
   renderStatsCards(els.sideStats);
   if (state.mainView === "home") renderHomeExperience();
+  if (els.categoryFormPanel && !els.categoryFormPanel.classList.contains("hidden")) renderCategoryManager();
 
   if (typeof renderCinemaAlerts === "function") {
     renderCinemaAlerts();
@@ -1873,6 +1777,16 @@ function refreshUI() {
   restoreDraftFields(draft);
 }
 
+  let dataLoadErrorShown = false;
+  function handleDataLoadError(error) {
+    console.error("Erreur de synchronisation Firebase", error);
+    hideBootLoader();
+    if (!dataLoadErrorShown) {
+      dataLoadErrorShown = true;
+      showToast("Impossible de synchroniser les données. Vérifiez la connexion puis rechargez la page.", true);
+    }
+  }
+
   function syncAllCategoryCounts() {
     let cacheNeedsRebuild = false;
 
@@ -1889,12 +1803,16 @@ function refreshUI() {
 
     state.categories.forEach(cat => {
       if (!state.allCategoryListeners[cat.id]) {
-        state.allCategoryListeners[cat.id] = onSnapshot(collection(db, "categories", cat.id, "films"), snap => {
-          state.allFilmsMap[cat.id] = snap.docs.map(d => ({ id: d.id, cat: cat.id, ...d.data() }));
-          rebuildFilmsCache();
-          scheduleRefreshUI();
-          setTimeout(hideBootLoader, 220);
-        });
+        state.allCategoryListeners[cat.id] = onSnapshot(
+          collection(db, "categories", cat.id, "films"),
+          snap => {
+            state.allFilmsMap[cat.id] = snap.docs.map(d => ({ id: d.id, cat: cat.id, ...d.data() }));
+            rebuildFilmsCache();
+            scheduleRefreshUI();
+            setTimeout(hideBootLoader, 220);
+          },
+          handleDataLoadError
+        );
       }
     });
   }
@@ -2095,9 +2013,8 @@ async function addDrawHistory(film, mode){
     onSnapshot(qHistory, snap => {
       state.drawHistory = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderHistory(els.historyList);
-renderHistory(els.homeHistory);
-renderHistory(els.mobileHistoryList);
-    });
+      renderHistory(els.mobileHistoryList);
+    }, handleDataLoadError);
   }
 
   function watchCategories() {
@@ -2109,7 +2026,7 @@ renderHistory(els.mobileHistoryList);
       syncAllCategoryCounts();
       scheduleRefreshUI();
       if (!state.categories.length) setTimeout(hideBootLoader, 220);
-    });
+    }, handleDataLoadError);
   }
 
   async function createCategory() {
@@ -2177,20 +2094,31 @@ renderHistory(els.mobileHistoryList);
       };
 
       if (state.editingFilm) {
-const payload = {
-  ...commonPayload,
-  missed: !!state.editingFilm.missed,
-  createdAtMs: state.editingFilm.createdAtMs || now,
-  createdBy: state.editingFilm.createdBy || state.editingFilm.addedBy || selectedCreatedBy,
-  addedBy: state.editingFilm.createdBy || state.editingFilm.addedBy || selectedCreatedBy,
-  updatedAtMs: now,
-  updatedBy: state.activeProfile
-};
+        const preservedFields = { ...state.editingFilm };
+        delete preservedFields.id;
+        delete preservedFields.cat;
+
+        const payload = {
+          ...preservedFields,
+          ...commonPayload,
+          missed: type === "cinema" && !seenState.seenTogether ? !!state.editingFilm.missed : false,
+          mustWatch: (seenState.kathieSeen && seenState.alyssiaSeen) || seenState.seenTogether
+            ? false
+            : !!state.editingFilm.mustWatch,
+          createdAtMs: state.editingFilm.createdAtMs || now,
+          createdBy: state.editingFilm.createdBy || state.editingFilm.addedBy || selectedCreatedBy,
+          addedBy: state.editingFilm.createdBy || state.editingFilm.addedBy || selectedCreatedBy,
+          updatedAtMs: now,
+          updatedBy: state.activeProfile
+        };
+
         if (state.editingFilm.cat === cat) {
           await updateDoc(doc(db, "categories", state.editingFilm.cat, "films", state.editingFilm.id), payload);
         } else {
-          await addDoc(collection(db, "categories", cat, "films"), payload);
-          await deleteDoc(doc(db, "categories", state.editingFilm.cat, "films", state.editingFilm.id));
+          const batch = writeBatch(db);
+          batch.set(doc(db, "categories", cat, "films", state.editingFilm.id), payload);
+          batch.delete(doc(db, "categories", state.editingFilm.cat, "films", state.editingFilm.id));
+          await batch.commit();
         }
         showToast("Film modifié ✨");
       } else {
@@ -2270,26 +2198,40 @@ const payload = {
   }
 
   async function patchFilm(cat, id, patch) {
-  const film = getFilmByIds(cat, id);
-  if (!film) return;
+    const film = getFilmByIds(cat, id);
+    if (!film) return;
 
-  const nextKathieSeen = patch.kathieSeen ?? film.kathieSeen;
-  const nextAlyssiaSeen = patch.alyssiaSeen ?? film.alyssiaSeen;
-  const nextSeenTogether = patch.seenTogether ?? film.seenTogether;
+    const normalizedPatch = { ...patch };
 
- const shouldRemoveMustWatch = (nextKathieSeen && nextAlyssiaSeen) || nextSeenTogether;
+    if (normalizedPatch.seenTogether === true) {
+      normalizedPatch.kathieSeen = true;
+      normalizedPatch.alyssiaSeen = true;
+      normalizedPatch.missed = false;
+    }
 
-  const finalPatch = {
-    ...patch,
-    ...(shouldRemoveMustWatch ? { mustWatch: false } : {}),
-    updatedAtMs: Date.now(),
-    updatedBy: state.activeProfile
-  };
+    if (normalizedPatch.missed === true) {
+      normalizedPatch.seenTogether = false;
+      normalizedPatch.seenTogetherAtMs = null;
+      normalizedPatch.seenTogetherDateLabel = "";
+    }
 
-  await updateDoc(doc(db, "categories", cat, "films", id), finalPatch);
-}
+    const nextKathieSeen = normalizedPatch.kathieSeen ?? film.kathieSeen;
+    const nextAlyssiaSeen = normalizedPatch.alyssiaSeen ?? film.alyssiaSeen;
+    const nextSeenTogether = normalizedPatch.seenTogether ?? film.seenTogether;
+    const shouldRemoveMustWatch = (nextKathieSeen && nextAlyssiaSeen) || nextSeenTogether;
+
+    const finalPatch = {
+      ...normalizedPatch,
+      ...(shouldRemoveMustWatch ? { mustWatch: false } : {}),
+      updatedAtMs: Date.now(),
+      updatedBy: state.activeProfile
+    };
+
+    await updateDoc(doc(db, "categories", film.cat, "films", film.id), finalPatch);
+  }
 
   function openFilmForm(editMode = false) {
+    els.categoryFormPanel?.classList.add("hidden");
     els.filmFormPanel.classList.remove("hidden");
     els.toggleFilmFormBtn.textContent = editMode ? "✏️ Modifier le film" : "➖ Fermer le formulaire";
   }
@@ -2388,6 +2330,7 @@ els.filmTitle.addEventListener("blur", () => {
       if (!els.categoryFormPanel.classList.contains("hidden")) {
         els.filmFormPanel.classList.add("hidden");
         els.toggleFilmFormBtn.textContent = "➕ Ajouter un film";
+        renderCategoryManager();
       }
     });
 
@@ -2502,17 +2445,12 @@ els.filterMustWatchBtn.addEventListener("click", () => {
     els.homeDrawBtn?.addEventListener("click", () => setMainView("tirage"));
     els.homeLibraryBtn?.addEventListener("click", () => setMainView("bibliotheque"));
     const openAddFilmFlow = () => {
-      if (!state.editingFilm) resetFilmForm();
+      resetFilmForm();
       setMainView("ajout");
       openFilmForm(false);
       requestAnimationFrame(() => els.filmTitle?.focus());
     };
     els.topQuickAddBtn?.addEventListener("click", openAddFilmFlow);
-    els.homeSpotlightBtn?.addEventListener("click", () => {
-      const { cat, id } = els.homeSpotlightBtn.dataset;
-      if (cat && id) window.openFilmDetails(cat, id);
-    });
-
     document.querySelectorAll("[data-home-view]").forEach(el => el.addEventListener("click", () => {
       const view = el.dataset.homeView;
       const filter = el.dataset.homeFilter;
@@ -2520,7 +2458,8 @@ els.filterMustWatchBtn.addEventListener("click", () => {
         state.libraryFilter = filter;
         localStorage.setItem("allieflix_library_filter", filter);
       }
-      setMainView(view);
+      if (view === "ajout") openAddFilmFlow();
+      else setMainView(view);
       if (view === "bibliotheque") updateLibraryFilterButtons();
     }));
     document.querySelectorAll(".nav-card").forEach(card => card.addEventListener("click", () => {
@@ -2534,11 +2473,6 @@ els.filterMustWatchBtn.addEventListener("click", () => {
       els.moreSheet?.classList.remove("hidden");
       els.moreSheetBackdrop?.classList.remove("hidden");
       document.body.style.overflow = "hidden";
-    };
-    const closeMoreSheet = () => {
-      els.moreSheet?.classList.add("hidden");
-      els.moreSheetBackdrop?.classList.add("hidden");
-      document.body.style.overflow = "";
     };
     els.mobileMoreBtn?.addEventListener("click", openMoreSheet);
     els.closeMoreSheetBtn?.addEventListener("click", closeMoreSheet);
@@ -2608,21 +2542,21 @@ window.quickToggleMustWatch = async (cat, id) => {
   const film = getFilmByIds(cat, id);
   if (!film) return;
 
+  const nextValue = !film.mustWatch;
+  if (nextValue && ((film.kathieSeen && film.alyssiaSeen) || film.seenTogether)) {
+    showToast("Ce film est déjà vu par vous deux 🎬", true);
+    return;
+  }
+
   try {
-    await updateDoc(
-      doc(db, "categories", cat, "films", id),
-      {
-        mustWatch: !film.mustWatch,
-        updatedAtMs: Date.now(),
-        updatedBy: state.activeProfile
-      }
-    );
-    showToast(!film.mustWatch ? "Promu dans les incontournables ⭐" : "Retiré des incontournables");
+    await patchFilm(cat, id, { mustWatch: nextValue });
+    showToast(nextValue ? "Promu dans les incontournables ⭐" : "Retiré des incontournables");
   } catch (error) {
     console.error(error);
     showToast("Impossible de modifier À voir absolument", true);
   }
 };
+
 window.navigateAllieFlix = view => setMainView(view);
 
 window.closeFocusedFilm = () => {
@@ -2648,17 +2582,7 @@ window.closeFocusedCinemaFilm = () => {
   const film = getFilmByIds(cat, id);
   if (!film) return;
 
-  const shouldAppearInLibrary =
-    isHomeFilm(film) ||
-    (isCinemaFilm(film) && (
-      film.missed ||
-      film.seenTogether ||
-      (film.kathieSeen && film.alyssiaSeen) ||
-      film.kathieSeen ||
-      film.alyssiaSeen
-    ));
-
-if (shouldAppearInLibrary) {
+if (shouldAppearInLibrary(film)) {
   state.libraryScrollY = window.scrollY;
   state.focusedFilm = { cat, id };
   state.currentLibraryView = "list";
@@ -2743,13 +2667,24 @@ window.scrollTo({ top: 0, behavior: "auto" });
   window.toggleTogether = async (cat, id, value) => {
     try {
       const film = getFilmByIds(cat, id);
+      if (!film) return;
       const now = Date.now();
-      const normalized = normalizeSeenState({ kathieSeen: value, alyssiaSeen: value, seenTogether: value });
-      await patchFilm(cat, id, {
-        kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether,
-        seenTogetherAtMs: value ? now : null, seenTogetherDateLabel: value ? formatDate(now) : ""
-      });
-      if (value && film && isCinemaFilm(film)) showToast("Une séance de plus dans votre histoire 🍿");
+      const patch = value
+        ? {
+            kathieSeen: true,
+            alyssiaSeen: true,
+            seenTogether: true,
+            seenTogetherAtMs: now,
+            seenTogetherDateLabel: formatDate(now)
+          }
+        : {
+            seenTogether: false,
+            seenTogetherAtMs: null,
+            seenTogetherDateLabel: ""
+          };
+
+      await patchFilm(cat, id, patch);
+      if (value && isCinemaFilm(film)) showToast("Une séance de plus dans votre histoire 🍿");
       else showToast(value ? "Film ajouté à votre histoire à deux 🎬" : 'Statut "vu ensemble" retiré');
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
@@ -2795,11 +2730,19 @@ window.clearPersonalRating = async (cat, id, person) => {
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour du favori", true); }
   };
 window.toggleMustWatch = async (cat, id, value) => {
+  const film = getFilmByIds(cat, id);
+  if (!film) return;
+
+  if (value && ((film.kathieSeen && film.alyssiaSeen) || film.seenTogether)) {
+    showToast("Ce film est déjà vu par vous deux 🎬", true);
+    return;
+  }
+
   try {
     await patchFilm(cat, id, { mustWatch: value });
 
     if (value) {
-      state.highlightedMustWatch = `${cat}_${id}`;
+      state.highlightedMustWatch = `${film.cat}_${film.id}`;
       renderFilms();
       setTimeout(() => {
         state.highlightedMustWatch = null;
@@ -2813,6 +2756,7 @@ window.toggleMustWatch = async (cat, id, value) => {
     showToast("Erreur pendant la mise à jour", true);
   }
 };
+
   window.toggleMoveBox = (cat, id) => {
     const el = document.getElementById(`moveBox-${cat}-${id}`);
     if (el) el.classList.toggle("hidden");
@@ -2827,8 +2771,10 @@ window.toggleMustWatch = async (cat, id, value) => {
       if(targetCat === cat) { showToast("Le film est déjà dans cette catégorie"); return; }
       const payload = { ...film, updatedAtMs: Date.now(), updatedBy: state.activeProfile };
       delete payload.id; delete payload.cat;
-      await addDoc(collection(db, "categories", targetCat, "films"), payload);
-      await deleteDoc(doc(db, "categories", cat, "films", id));
+      const batch = writeBatch(db);
+      batch.set(doc(db, "categories", targetCat, "films", film.id), payload);
+      batch.delete(doc(db, "categories", film.cat, "films", film.id));
+      await batch.commit();
       showToast("Film déplacé ✨");
     } catch (error) { console.error(error); showToast("Erreur pendant le déplacement du film", true); }
   };

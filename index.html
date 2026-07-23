@@ -19,7 +19,7 @@
 <div class="container">
   <div class="topbar v2-topbar">
     <button class="logo-btn" id="goHomeBtn" type="button" aria-label="Retour à l’accueil">
-      <div class="logo-mark">🎬</div>
+      <div class="logo-mark"><img src="./icon-192.png" alt="" aria-hidden="true" /></div>
       <div>
         <div class="logo-title">ALLIEFLIX</div>
         <div class="logo-subtitle">notre cinéma à deux</div>
@@ -468,21 +468,21 @@
   </div>
 </section>
 
-<div id="hotReactionBackdrop" class="sheet-backdrop hidden"></div>
-<section id="hotReactionSheet" class="hot-reaction-sheet hidden" aria-modal="true" role="dialog" aria-labelledby="hotReactionTitle">
+<div id="predictionBackdrop" class="sheet-backdrop hidden"></div>
+<section id="predictionSheet" class="prediction-sheet hidden" aria-modal="true" role="dialog" aria-labelledby="predictionTitle">
   <div class="sheet-handle"></div>
-  <button id="closeHotReactionBtn" class="sheet-close hot-reaction-close" type="button" aria-label="Fermer">✕</button>
-  <div class="hot-reaction-copy">
-    <span class="section-kicker">Réaction à chaud</span>
-    <h2 id="hotReactionTitle">Alors, verdict ?</h2>
-    <p id="hotReactionSubtitle">Une seule réaction. Pas le temps de réfléchir.</p>
+  <button id="closePredictionBtn" class="sheet-close prediction-close" type="button" aria-label="Fermer">✕</button>
+  <div class="prediction-copy">
+    <span class="section-kicker">🎯 Prédiction avant le film</span>
+    <h2 id="predictionTitle">Tu penses lui mettre combien ?</h2>
+    <p id="predictionSubtitle">Choisis ta future note avant de connaître le verdict.</p>
   </div>
-  <div id="hotReactionChoices" class="hot-reaction-choices" aria-label="Choisir une réaction"></div>
-  <button id="hotReactionLaterBtn" class="ghost hot-reaction-later" type="button">Je répondrai plus tard</button>
+  <div id="predictionChoices" class="prediction-choices" aria-label="Choisir une note prédite"></div>
+  <button id="predictionLaterBtn" class="ghost prediction-later" type="button">Plus tard</button>
 </section>
 
 <div id="appBootLoader" class="app-boot-loader">
-  <div class="boot-logo">🎬</div>
+  <div class="boot-logo"><img src="./icon-192.png" alt="" aria-hidden="true" /></div>
   <div class="boot-title">ALLIEFLIX</div>
   <div class="boot-dots"><span></span><span></span><span></span></div>
 </div>

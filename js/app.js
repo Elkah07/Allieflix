@@ -53,7 +53,7 @@ statsDrilldown: null,
   duelChampion: null,
   duelRoundNumber: 1,
   wrappedYear: Number(localStorage.getItem("allieflix_wrapped_year")) || new Date().getFullYear(),
-  pendingHotReaction: null,
+  pendingPrediction: null,
 };
 
   const els = {
@@ -142,13 +142,13 @@ titleSuggestions: document.getElementById("titleSuggestions"),
     challengesView: document.getElementById("challengesView"),
     challengesContent: document.getElementById("challengesContent"),
     installAppBtn: document.getElementById("installAppBtn"),
-    hotReactionBackdrop: document.getElementById("hotReactionBackdrop"),
-    hotReactionSheet: document.getElementById("hotReactionSheet"),
-    hotReactionTitle: document.getElementById("hotReactionTitle"),
-    hotReactionSubtitle: document.getElementById("hotReactionSubtitle"),
-    hotReactionChoices: document.getElementById("hotReactionChoices"),
-    closeHotReactionBtn: document.getElementById("closeHotReactionBtn"),
-    hotReactionLaterBtn: document.getElementById("hotReactionLaterBtn"),
+    predictionBackdrop: document.getElementById("predictionBackdrop"),
+    predictionSheet: document.getElementById("predictionSheet"),
+    predictionTitle: document.getElementById("predictionTitle"),
+    predictionSubtitle: document.getElementById("predictionSubtitle"),
+    predictionChoices: document.getElementById("predictionChoices"),
+    closePredictionBtn: document.getElementById("closePredictionBtn"),
+    predictionLaterBtn: document.getElementById("predictionLaterBtn"),
   };
   els.sortSelect.value = state.sortMode;
   els.activeProfileSelect.value = state.activeProfile;
@@ -346,105 +346,232 @@ function setupMobileAppInstall() {
   updateInstallAppButton();
 }
 
-const HOT_REACTIONS = [
-  { emoji:"😍", label:"J’ai adoré" },
-  { emoji:"😭", label:"Ça m’a détruite" },
-  { emoji:"😱", label:"Je suis traumatisée" },
-  { emoji:"🤯", label:"Mon cerveau a explosé" },
-  { emoji:"😐", label:"Mouais…" },
-  { emoji:"🤢", label:"Plus jamais" },
+const LEGENDARY_RATING = 6;
+const MAX_LEGENDARY_PER_PROFILE = 3;
+const PREDICTION_CHOICES = [
+  { value:0, label:"🤢 0/5", short:"🤢" },
+  { value:1, label:"1/5", short:"★" },
+  { value:2, label:"2/5", short:"★★" },
+  { value:3, label:"3/5", short:"★★★" },
+  { value:4, label:"4/5", short:"★★★★" },
+  { value:5, label:"5/5", short:"★★★★★" },
+  { value:6, label:"LE FILM · 6/5", short:"👑" },
 ];
 
-function hotReactionField(person) {
-  return person === "Alyssia" ? "hotReactionAlyssia" : "hotReactionKathie";
+function ratingField(person) {
+  return person === "Alyssia" ? "ratingAlyssia" : "ratingKathie";
 }
 
-function hotReactionDateField(person) {
-  return person === "Alyssia" ? "hotReactionAlyssiaAtMs" : "hotReactionKathieAtMs";
+function predictionField(person) {
+  return person === "Alyssia" ? "predictionAlyssia" : "predictionKathie";
 }
 
-function getHotReaction(film, person) {
-  return film?.[hotReactionField(person)] || "";
+function predictionDateField(person) {
+  return person === "Alyssia" ? "predictionAlyssiaAtMs" : "predictionKathieAtMs";
 }
 
-function closeHotReactionPrompt() {
-  state.pendingHotReaction = null;
-  els.hotReactionSheet?.classList.add("hidden");
-  els.hotReactionBackdrop?.classList.add("hidden");
-  document.body.classList.remove("reaction-sheet-open");
+function getPersonalRating(film, person) {
+  return film?.[ratingField(person)] ?? null;
 }
 
-function openHotReactionPrompt(cat, id, person = state.activeProfile) {
+function getPrediction(film, person) {
+  const value = film?.[predictionField(person)];
+  return value === null || value === undefined || value === "" ? null : Number(value);
+}
+
+function hasSeenFilm(film, person) {
+  return person === "Alyssia"
+    ? !!(film?.alyssiaSeen || film?.seenTogether)
+    : !!(film?.kathieSeen || film?.seenTogether);
+}
+
+function getLegendaryCount(person, excludeId = "") {
+  const field = ratingField(person);
+  return getAllFilmsFlat().filter(f =>
+    f.id !== excludeId && Number(f[field]) === LEGENDARY_RATING
+  ).length;
+}
+
+function getLegendaryRemaining(person, excludeId = "") {
+  return Math.max(0, MAX_LEGENDARY_PER_PROFILE - getLegendaryCount(person, excludeId));
+}
+
+function formatPredictionValue(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  if (number === LEGENDARY_RATING) return "6/5 · LE FILM";
+  if (number === 0) return "🤢 0/5";
+  return `${number}/5`;
+}
+
+function closePredictionPrompt() {
+  state.pendingPrediction = null;
+  els.predictionSheet?.classList.add("hidden");
+  els.predictionBackdrop?.classList.add("hidden");
+  document.body.classList.remove("prediction-sheet-open");
+}
+
+function openPredictionPrompt(cat, id, person = state.activeProfile) {
   const film = getFilmByIds(cat, id);
   if (!film) return;
-  const safePerson = person === "Alyssia" ? "Alyssia" : "Kathie";
-  state.pendingHotReaction = { cat:film.cat, id:film.id, person:safePerson };
 
-  if (els.hotReactionTitle) els.hotReactionTitle.textContent = `${safePerson}, réaction à chaud ?`;
-  if (els.hotReactionSubtitle) {
-    els.hotReactionSubtitle.textContent = `${film.title} vient de rejoindre vos films vus. Choisis l’émotion qui te vient en premier.`;
+  const safePerson = person === "Alyssia" ? "Alyssia" : "Kathie";
+  const actualRating = getPersonalRating(film, safePerson);
+
+  if (actualRating !== null && actualRating !== undefined && actualRating !== "") {
+    showToast(`La vraie note de ${safePerson} est déjà enregistrée : la prédiction est verrouillée.`, true);
+    return;
   }
-  if (els.hotReactionChoices) {
-    const current = getHotReaction(film, safePerson);
-    els.hotReactionChoices.innerHTML = HOT_REACTIONS.map(item => `
-      <button class="hot-reaction-choice ${current === item.emoji ? "selected" : ""}" type="button"
-        data-hot-reaction="${item.emoji}" aria-label="${escapeHtml(item.label)}">
-        <span>${item.emoji}</span><small>${escapeHtml(item.label)}</small>
+
+  if (hasSeenFilm(film, safePerson)) {
+    showToast(`${safePerson} a déjà vu ce film. La prédiction se fait avant la séance 🎯`, true);
+    return;
+  }
+
+  state.pendingPrediction = { cat:film.cat, id:film.id, person:safePerson };
+
+  if (els.predictionTitle) els.predictionTitle.textContent = `${safePerson}, tu penses lui mettre combien ?`;
+  if (els.predictionSubtitle) {
+    els.predictionSubtitle.textContent = `${film.title} · ta prédiction restera affichée à côté de ta vraie note après le film.`;
+  }
+
+  if (els.predictionChoices) {
+    const current = getPrediction(film, safePerson);
+    els.predictionChoices.innerHTML = PREDICTION_CHOICES.map(item => `
+      <button class="prediction-choice ${current === item.value ? "selected" : ""} ${item.value === LEGENDARY_RATING ? "legendary" : ""}"
+        type="button" data-prediction-value="${item.value}" aria-label="${escapeHtml(item.label)}">
+        <span>${item.short}</span><small>${escapeHtml(item.label)}</small>
       </button>
     `).join("");
 
-    els.hotReactionChoices.querySelectorAll("[data-hot-reaction]").forEach(button => {
-      button.addEventListener("click", () => saveHotReaction(button.dataset.hotReaction || ""));
+    els.predictionChoices.querySelectorAll("[data-prediction-value]").forEach(button => {
+      button.addEventListener("click", () => savePrediction(Number(button.dataset.predictionValue)));
     });
   }
 
-  els.hotReactionBackdrop?.classList.remove("hidden");
-  els.hotReactionSheet?.classList.remove("hidden");
-  document.body.classList.add("reaction-sheet-open");
+  els.predictionBackdrop?.classList.remove("hidden");
+  els.predictionSheet?.classList.remove("hidden");
+  document.body.classList.add("prediction-sheet-open");
 }
 
-async function saveHotReaction(emoji) {
-  const pending = state.pendingHotReaction;
-  if (!pending || !HOT_REACTIONS.some(item => item.emoji === emoji)) return;
+async function savePrediction(value) {
+  const pending = state.pendingPrediction;
+  if (!pending || !PREDICTION_CHOICES.some(item => item.value === value)) return;
+
   try {
     await patchFilm(pending.cat, pending.id, {
-      [hotReactionField(pending.person)]: emoji,
-      [hotReactionDateField(pending.person)]: Date.now()
+      [predictionField(pending.person)]: value,
+      [predictionDateField(pending.person)]: Date.now()
     });
-    closeHotReactionPrompt();
-    showToast(`${emoji} Réaction de ${pending.person} enregistrée`);
+    closePredictionPrompt();
+    showToast(`🎯 Prédiction de ${pending.person} enregistrée : ${formatPredictionValue(value)}`);
   } catch (error) {
     console.error(error);
-    showToast("Impossible d’enregistrer la réaction", true);
+    showToast("Impossible d’enregistrer la prédiction", true);
   }
 }
 
-function renderHotReactionSection(film) {
-  const profiles = [
-    { name:"Kathie", initial:"K", seen:film.kathieSeen || film.seenTogether },
-    { name:"Alyssia", initial:"A", seen:film.alyssiaSeen || film.seenTogether },
-  ].filter(profile => profile.seen);
-
-  if (!profiles.length) return "";
+function renderPredictionSection(film) {
+  const profiles = ["Kathie", "Alyssia"];
 
   return `
-    <section class="hot-reaction-panel">
+    <section class="prediction-panel">
       <div class="memory-head">
-        <div><span>⚡ Réactions à chaud</span><strong>Le premier ressenti, avant la note</strong></div>
+        <div><span>🎯 Prédictions avant le film</span><strong>Aviez-vous vu juste ?</strong></div>
       </div>
-      <div class="hot-reaction-duo">
-        ${profiles.map(profile => {
-          const reaction = getHotReaction(film, profile.name);
-          const reactionMeta = HOT_REACTIONS.find(item => item.emoji === reaction);
-          return `<button class="hot-reaction-person ${profile.name === state.activeProfile ? "is-active-profile" : ""}" type="button"
-            onclick="window.openHotReactionPrompt('${film.cat}','${film.id}','${profile.name}')">
-            <span class="review-avatar ${profile.name.toLowerCase()}">${profile.initial}</span>
-            <span class="hot-reaction-person-copy"><strong>${profile.name}</strong><small>${reactionMeta ? escapeHtml(reactionMeta.label) : "Ajouter une réaction"}</small></span>
-            <b>${reaction || "＋"}</b>
-          </button>`;
+      <div class="prediction-duo">
+        ${profiles.map(person => {
+          const prediction = getPrediction(film, person);
+          const actual = getPersonalRating(film, person);
+          const hasActual = actual !== null && actual !== undefined && actual !== "";
+          const canPredict = !hasActual && !hasSeenFilm(film, person);
+          const gap = prediction !== null && hasActual ? Math.abs(Number(actual) - Number(prediction)) : null;
+          const verdict = gap === null
+            ? (prediction !== null ? "Verdict en attente" : "Pas encore de prédiction")
+            : gap === 0 ? "Dans le mille ✨"
+            : gap <= 1 ? "Presque parfait"
+            : `Écart de ${gap} point${gap > 1 ? "s" : ""}`;
+
+          return `<article class="prediction-person ${person === state.activeProfile ? "is-active-profile" : ""}">
+            <div class="prediction-person-head">
+              <span class="review-avatar ${person.toLowerCase()}">${person[0]}</span>
+              <div><strong>${person}</strong><small>${escapeHtml(verdict)}</small></div>
+            </div>
+            <div class="prediction-score-line">
+              <span><small>Prédiction</small><b>${formatPredictionValue(prediction)}</b></span>
+              <i>→</i>
+              <span><small>Vraie note</small><b>${hasActual ? `${displayRating(actual)}/5` : "?"}</b></span>
+            </div>
+            ${canPredict ? `<button class="secondary prediction-open-btn" type="button"
+              onclick="window.openPredictionPrompt('${film.cat}','${film.id}','${person}')">
+              ${prediction === null ? "Faire ma prédiction" : "Changer ma prédiction"}
+            </button>` : ""}
+          </article>`;
         }).join("")}
       </div>
     </section>`;
+}
+
+let historyReady = false;
+let restoringHistory = false;
+
+function historySnapshot(view = state.mainView) {
+  return {
+    allieflix:true,
+    view:view || "home",
+    focusedFilm:state.focusedFilm ? { ...state.focusedFilm } : null,
+  };
+}
+
+function syncNavigationHistory(view = state.mainView, { replace = false, guard = false } = {}) {
+  if (!historyReady || restoringHistory) return;
+  const snapshot = { ...historySnapshot(view), guard };
+  const current = history.state;
+  const same = current?.allieflix
+    && current.view === snapshot.view
+    && JSON.stringify(current.focusedFilm || null) === JSON.stringify(snapshot.focusedFilm || null)
+    && !!current.guard === !!snapshot.guard;
+  if (same) return;
+  history[replace ? "replaceState" : "pushState"](snapshot, "", window.location.href);
+}
+
+function initMobileNavigationHistory() {
+  const initialView = els.homePage && !els.homePage.classList.contains("hidden") ? "home" : (state.mainView || "home");
+  state.mainView = initialView;
+  history.replaceState({ ...historySnapshot(initialView), guard:false }, "", window.location.href);
+  history.pushState({ ...historySnapshot(initialView), guard:true }, "", window.location.href);
+  historyReady = true;
+
+  window.addEventListener("popstate", event => {
+    if (els.predictionSheet && !els.predictionSheet.classList.contains("hidden")) {
+      closePredictionPrompt();
+      history.pushState({ ...historySnapshot(), guard:true }, "", window.location.href);
+      return;
+    }
+
+    if (els.moreSheet && !els.moreSheet.classList.contains("hidden")) {
+      closeMoreSheet();
+      history.pushState({ ...historySnapshot(), guard:true }, "", window.location.href);
+      return;
+    }
+
+    const nav = event.state;
+    if (!nav?.allieflix) {
+      history.pushState({ ...historySnapshot(), guard:true }, "", window.location.href);
+      showToast("Retour à l’accueil AllieFlix 🎬");
+      return;
+    }
+
+    restoringHistory = true;
+    state.focusedFilm = nav.focusedFilm || null;
+    if (nav.view === "home") showHome();
+    else setMainView(nav.view || "home");
+    restoringHistory = false;
+
+    if (nav.view === "home" && !nav.guard) {
+      history.pushState({ ...historySnapshot("home"), guard:true }, "", window.location.href);
+    }
+  });
 }
 
 function showHome() {
@@ -459,6 +586,7 @@ function showHome() {
   els.mobileHomeBtn?.classList.add("active");
   renderHomeExperience();
   resetPageScroll();
+  syncNavigationHistory("home");
 }
 
  function showApp() {
@@ -706,6 +834,7 @@ if (els.appSidebar) {
 
     renderCurrentMainView();
     resetPageScroll();
+    syncNavigationHistory(view);
   }
 
   function normalizeSeenState({ kathieSeen = false, alyssiaSeen = false, seenTogether = false }) {
@@ -1023,31 +1152,110 @@ const cinemaSeenTogether = all.filter(f =>
 
   function getAchievements() {
     const all = getAllFilmsFlat();
-    const ratedTogether = all.filter(f => f.ratingKathie !== null && f.ratingKathie !== undefined && f.ratingAlyssia !== null && f.ratingAlyssia !== undefined);
+    const togetherFilms = all.filter(f => f.seenTogether);
+    const ratedTogether = all.filter(f =>
+      f.ratingKathie !== null && f.ratingKathie !== undefined && f.ratingKathie !== ""
+      && f.ratingAlyssia !== null && f.ratingAlyssia !== undefined && f.ratingAlyssia !== ""
+    );
+
     const exactMatches = ratedTogether.filter(f => Number(f.ratingKathie) === Number(f.ratingAlyssia)).length;
+    const closeMatches = ratedTogether.filter(f => Math.abs(Number(f.ratingKathie) - Number(f.ratingAlyssia)) <= 1).length;
     const vomits = all.reduce((n,f) => n + (Number(f.ratingKathie) === 0 ? 1 : 0) + (Number(f.ratingAlyssia) === 0 ? 1 : 0), 0);
-    const mutualFives = ratedTogether.filter(f => Number(f.ratingKathie) === 5 && Number(f.ratingAlyssia) === 5).length;
+    const mutualFives = ratedTogether.filter(f => Number(f.ratingKathie) >= 5 && Number(f.ratingAlyssia) >= 5).length;
     const comments = all.reduce((n,f) => n + (Array.isArray(f.comments) ? f.comments.length : 0), 0);
-    const horrorTogether = all.filter(f => f.seenTogether && /horreur|horror/i.test(getCategoryName(f.cat))).length;
-    const cinemaTogether = all.filter(f => f.seenTogether && isCinemaFilm(f)).length;
-    const together = all.filter(f => f.seenTogether).length;
+    const horrorTogether = togetherFilms.filter(f => /horreur|horror/i.test(getCategoryName(f.cat))).length;
+    const cinemaTogether = togetherFilms.filter(isCinemaFilm).length;
+    const together = togetherFilms.length;
+    const categoriesTogether = new Set(togetherFilms.map(f => f.cat).filter(Boolean)).size;
+    const favorites = all.filter(f => f.favorite).length;
+    const classicsBefore2000 = togetherFilms.filter(f => Number.parseInt(f.year, 10) < 2000).length;
+    const classicsBefore1980 = togetherFilms.filter(f => Number.parseInt(f.year, 10) < 1980).length;
+    const legendaryK = all.filter(f => Number(f.ratingKathie) === LEGENDARY_RATING).length;
+    const legendaryA = all.filter(f => Number(f.ratingAlyssia) === LEGENDARY_RATING).length;
+    const doubleLegendary = all.filter(f => Number(f.ratingKathie) === LEGENDARY_RATING && Number(f.ratingAlyssia) === LEGENDARY_RATING).length;
+    const predictionCount = all.reduce((n,f) =>
+      n + (getPrediction(f, "Kathie") !== null ? 1 : 0) + (getPrediction(f, "Alyssia") !== null ? 1 : 0), 0);
+    const predictionExact = all.reduce((n,f) => {
+      return n + ["Kathie","Alyssia"].reduce((sum, person) => {
+        const prediction = getPrediction(f, person);
+        const actual = getPersonalRating(f, person);
+        return sum + (prediction !== null && actual !== null && actual !== undefined && actual !== "" && Number(prediction) === Number(actual) ? 1 : 0);
+      }, 0);
+    }, 0);
+    const predictionClose = all.reduce((n,f) => {
+      return n + ["Kathie","Alyssia"].reduce((sum, person) => {
+        const prediction = getPrediction(f, person);
+        const actual = getPersonalRating(f, person);
+        return sum + (prediction !== null && actual !== null && actual !== undefined && actual !== "" && Math.abs(Number(prediction)-Number(actual)) <= 1 ? 1 : 0);
+      }, 0);
+    }, 0);
+
     const dayCounts = {};
-    all.filter(f => f.seenTogetherAtMs).forEach(f => {
+    togetherFilms.filter(f => f.seenTogetherAtMs).forEach(f => {
       const key = calendarDayKey(f.seenTogetherAtMs);
       dayCounts[key] = (dayCounts[key] || 0) + 1;
     });
     const marathonMax = Math.max(0, ...Object.values(dayCounts));
+    const lateNightFilms = togetherFilms.filter(f => {
+      const ms = Number(f.seenTogetherAtMs) || 0;
+      if (!ms) return false;
+      const hour = new Date(ms).getHours();
+      return hour >= 0 && hour < 5;
+    }).length;
+    const drawCount = Array.isArray(state.drawHistory) ? state.drawHistory.length : 0;
+    const duelWins = Object.values(getDuelScores()).reduce((sum,value) => sum + Number(value || 0), 0);
+    const challengeCompleted = getMonthlyChallenges().items.filter(item => item.complete).length;
 
-    return [
-      { icon:"🧠", title:"Même cerveau", desc:"Donner exactement la même note à 10 films.", value:exactMatches, target:10 },
-      { icon:"🍿", title:"Marathoniennes", desc:"Voir 3 films ensemble le même jour.", value:marathonMax, target:3 },
-      { icon:"🤢", title:"Aucun respect", desc:"Distribuer 10 notes 🤢 à vous deux.", value:vomits, target:10 },
-      { icon:"❤️", title:"Coup de cœur commun", desc:"Mettre toutes les deux 5/5 au même film.", value:mutualFives, target:1 },
-      { icon:"📝", title:"Critiques professionnelles", desc:"Écrire 100 commentaires sur vos films.", value:comments, target:100 },
-      { icon:"😱", title:"On aime souffrir", desc:"Voir 25 films d’horreur ensemble.", value:horrorTogether, target:25 },
-      { icon:"🎟️", title:"Habituées du grand écran", desc:"Voir 10 films ensemble au cinéma.", value:cinemaTogether, target:10 },
-      { icon:"🎬", title:"Cinéphiles inséparables", desc:"Atteindre 50 films vus ensemble.", value:together, target:50 },
-    ].map(item => ({ ...item, unlocked:item.value >= item.target, progress:Math.min(100, Math.round(item.value / item.target * 100)) }));
+    const list = [
+      ["🎬","Premier générique","Voir votre premier film ensemble.",together,1],
+      ["🎟️","Premier grand écran","Voir votre premier film ensemble au cinéma.",cinemaTogether,1],
+      ["🧠","Même cerveau","Donner exactement la même note à 10 films.",exactMatches,10],
+      ["🧬","Cerveaux fusionnés","Donner exactement la même note à 25 films.",exactMatches,25],
+      ["🤝","Presque toujours d’accord","Être à un point maximum d’écart sur 50 films.",closeMatches,50],
+      ["🍿","Double programme","Voir 2 films ensemble le même jour.",marathonMax,2],
+      ["🔥","Marathoniennes","Voir 3 films ensemble le même jour.",marathonMax,3],
+      ["🚀","Journée sans fin","Voir 5 films ensemble le même jour.",marathonMax,5],
+      ["🌙","Nuit blanche","Regarder 5 films ensemble après minuit.",lateNightFilms,5],
+      ["🤢","Aucun respect","Distribuer 10 notes 🤢 à vous deux.",vomits,10],
+      ["☠️","Massacre critique","Distribuer 25 notes 🤢 à vous deux.",vomits,25],
+      ["❤️","Coup de cœur commun","Mettre toutes les deux au moins 5/5 au même film.",mutualFives,1],
+      ["💞","Valeurs sûres","Partager 10 coups de cœur notés au moins 5/5 chacune.",mutualFives,10],
+      ["📝","Premières critiques","Écrire 10 commentaires sur vos films.",comments,10],
+      ["✍️","Critiques professionnelles","Écrire 50 commentaires sur vos films.",comments,50],
+      ["📚","Encyclopédie AllieFlix","Écrire 100 commentaires sur vos films.",comments,100],
+      ["😱","Frissons garantis","Voir 10 films d’horreur ensemble.",horrorTogether,10],
+      ["🔥","Expertes en frissons","Voir 25 films d’horreur ensemble.",horrorTogether,25],
+      ["🎟️","Habituées du grand écran","Voir 10 films ensemble au cinéma.",cinemaTogether,10],
+      ["🍿","Reines du cinéma","Voir 25 films ensemble au cinéma.",cinemaTogether,25],
+      ["💑","Cinéphiles inséparables","Atteindre 50 films vus ensemble.",together,50],
+      ["💯","Cent génériques","Atteindre 100 films vus ensemble.",together,100],
+      ["🗃️","Collectionneuses","Ajouter 100 films à AllieFlix.",all.length,100],
+      ["🏛️","Archives nationales","Ajouter 250 films à AllieFlix.",all.length,250],
+      ["🧭","Exploratrices","Voir ensemble des films de 5 catégories différentes.",categoriesTogether,5],
+      ["🌍","Tour du catalogue","Voir ensemble des films de 10 catégories différentes.",categoriesTogether,10],
+      ["📼","Nostalgie","Voir 5 films sortis avant 2000.",classicsBefore2000,5],
+      ["🕰️","Archéologues du cinéma","Voir 10 films sortis avant 1980.",classicsBefore1980,10],
+      ["❤️","Bibliothèque chouchou","Mettre 10 films en favoris.",favorites,10],
+      ["💎","Coffre aux trésors","Mettre 25 films en favoris.",favorites,25],
+      ["🎯","Je le savais","Faire 5 prédictions avant un film.",predictionCount,5],
+      ["🔮","Madame Irma","Faire 25 prédictions avant un film.",predictionCount,25],
+      ["✨","Dans le mille","Prédire exactement sa vraie note.",predictionExact,1],
+      ["🪄","Oracle du canapé","Prédire exactement 10 vraies notes.",predictionExact,10],
+      ["👀","Pas loin du tout","Être à un point maximum de sa prédiction 25 fois.",predictionClose,25],
+      ["👑","L’Intouchable","Attribuer une première note « LE FILM ».",legendaryK + legendaryA,1],
+      ["🌟","Le Panthéon","Attribuer 3 notes « LE FILM » à vous deux.",legendaryK + legendaryA,3],
+      ["👸","Trio sacré","Utiliser les 3 places « LE FILM » d’un même profil.",Math.max(legendaryK,legendaryA),3],
+      ["👑","Double couronne","Classer le même film « LE FILM » toutes les deux.",doubleLegendary,1],
+      ["🎲","Le hasard fait bien les choses","Accumuler 25 tirages dans l’historique.",drawCount,25],
+      ["🥊","Reines du ring","Cumuler 25 victoires dans les duels.",duelWins,25],
+      ["🎯","Mois maîtrisé","Terminer les 6 défis du mois.",challengeCompleted,6],
+    ];
+
+    return list.map(([icon,title,desc,value,target]) => ({
+      icon, title, desc, value, target,
+      unlocked:value >= target,
+      progress:Math.min(100, Math.round((value / target) * 100))
+    }));
   }
 
   function getTopRatedCategory(person) {
@@ -1836,6 +2044,8 @@ ${f.missed ? '<span class="chip missed">😔 Raté</span>' : ''}
   <span class="chip">⭐ Moyenne ${avg}/5</span>
   <span class="chip">🟣 K ${displayRating(f.ratingKathie)}</span>
   <span class="chip">🟢 A ${displayRating(f.ratingAlyssia)}</span>
+  ${Number(f.ratingKathie) === LEGENDARY_RATING ? '<span class="chip legendary-chip">👑 LE FILM · Kathie</span>' : ''}
+  ${Number(f.ratingAlyssia) === LEGENDARY_RATING ? '<span class="chip legendary-chip">👑 LE FILM · Alyssia</span>' : ''}
   <span class="chip">💬 ${commentCount} commentaire${commentCount > 1 ? "s" : ""}</span>
   <span class="chip">👤 Créé par ${escapeHtml(f.createdBy || f.addedBy || "Inconnu")}</span>
   ${f.seenTogether ? '<span class="chip">🎬 Vu ensemble</span>' : ''}
@@ -1849,7 +2059,7 @@ ${f.missed ? '<span class="chip missed">😔 Raté</span>' : ''}
 
 ${drilldownExtraHtml}
 ${premiumDetail ? renderDuoReviews(f) : ""}
-${premiumDetail ? renderHotReactionSection(f) : ""}
+${premiumDetail ? renderPredictionSection(f) : ""}
 ${premiumDetail ? renderFilmMemorySection(f) : ""}
 
             <div class="status-row">
@@ -1878,6 +2088,12 @@ ${premiumDetail ? renderFilmMemorySection(f) : ""}
       type="button">★</button>
   `).join("")}
 
+  <button class="legendary-rating ${Number(f.ratingKathie) === LEGENDARY_RATING ? 'active' : ''}"
+    onclick="window.setPersonalRating('${f.cat}','${f.id}','Kathie',${LEGENDARY_RATING})"
+    type="button" title="Une des 3 notes ultimes de Kathie">
+    👑 LE FILM <small>${getLegendaryRemaining("Kathie")}/3 dispo</small>
+  </button>
+
   <button
     class="ghost"
     onclick="window.clearPersonalRating('${f.cat}','${f.id}','Kathie')"
@@ -1904,6 +2120,12 @@ ${premiumDetail ? renderFilmMemorySection(f) : ""}
       onclick="window.setPersonalRating('${f.cat}','${f.id}','Alyssia',${i})"
       type="button">★</button>
   `).join("")}
+
+  <button class="legendary-rating ${Number(f.ratingAlyssia) === LEGENDARY_RATING ? 'active' : ''}"
+    onclick="window.setPersonalRating('${f.cat}','${f.id}','Alyssia',${LEGENDARY_RATING})"
+    type="button" title="Une des 3 notes ultimes d’Alyssia">
+    👑 LE FILM <small>${getLegendaryRemaining("Alyssia")}/3 dispo</small>
+  </button>
 
   <button
     class="ghost"
@@ -2416,6 +2638,9 @@ ${renderStatsDrilldownHtml()}
             </div>
             <p style="margin:0 0 14px;line-height:1.72;color:#e8fffc;">${escapeHtml(film.summary || "Pas de résumé.")}</p>
             <div class="control-strip">
+              ${!hasSeenFilm(film, state.activeProfile) && (getPersonalRating(film, state.activeProfile) === null || getPersonalRating(film, state.activeProfile) === undefined || getPersonalRating(film, state.activeProfile) === "")
+                ? `<button class="secondary" type="button" onclick="window.openPredictionPrompt('${film.cat}','${film.id}','${state.activeProfile}')">🎯 Prédire ma note</button>`
+                : ""}
               <button class="warning" type="button" onclick="window.markDrawResultSeenTonight('${film.cat}','${film.id}')">🍿 On le regarde</button>
               <button class="secondary" type="button" onclick="window.rejectDrawResult('${film.cat}','${film.id}')">🙄 Pas ce soir, relance</button>
               <button class="ghost" type="button" onclick="window.openFilmDetails('${film.cat}','${film.id}')">📖 Voir la fiche</button>
@@ -3049,9 +3274,9 @@ hideTitleSuggestions();
   
 
   function bindEvents() {
-    els.closeHotReactionBtn?.addEventListener("click", closeHotReactionPrompt);
-    els.hotReactionLaterBtn?.addEventListener("click", closeHotReactionPrompt);
-    els.hotReactionBackdrop?.addEventListener("click", closeHotReactionPrompt);
+    els.closePredictionBtn?.addEventListener("click", closePredictionPrompt);
+    els.predictionLaterBtn?.addEventListener("click", closePredictionPrompt);
+    els.predictionBackdrop?.addEventListener("click", closePredictionPrompt);
 
     els.activeProfileSelect.addEventListener("change", () => {
       state.activeProfile = els.activeProfileSelect.value;
@@ -3274,8 +3499,8 @@ els.filterMustWatchBtn.addEventListener("click", () => {
     }));
     document.addEventListener("keydown", event => {
       if (event.key !== "Escape") return;
-      if (!els.hotReactionSheet?.classList.contains("hidden")) {
-        closeHotReactionPrompt();
+      if (!els.predictionSheet?.classList.contains("hidden")) {
+        closePredictionPrompt();
         return;
       }
       if (!els.moreSheet?.classList.contains("hidden")) closeMoreSheet();
@@ -3353,9 +3578,14 @@ window.quickToggleMustWatch = async (cat, id) => {
 };
 
 window.navigateAllieFlix = view => setMainView(view);
-window.openHotReactionPrompt = openHotReactionPrompt;
+window.openPredictionPrompt = openPredictionPrompt;
 
 window.closeFocusedFilm = () => {
+  if (history.state?.allieflix && history.state.focusedFilm) {
+    history.back();
+    return;
+  }
+
   state.focusedFilm = null;
   renderFilms();
 
@@ -3368,6 +3598,11 @@ window.closeFocusedFilm = () => {
 };
 
 window.closeFocusedCinemaFilm = () => {
+  if (history.state?.allieflix && history.state.focusedFilm) {
+    history.back();
+    return;
+  }
+
   state.focusedFilm = null;
   state.cinemaFilter = "all";
   updateCinemaFilterButtons();
@@ -3465,9 +3700,6 @@ window.scrollTo({ top: 0, behavior: "auto" });
       const patch = { kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether };
       if (!normalized.seenTogether) { patch.seenTogetherAtMs = null; patch.seenTogetherDateLabel = ""; }
       await patchFilm(cat, id, patch);
-      if (value && !getHotReaction(film, "Kathie")) {
-        setTimeout(() => openHotReactionPrompt(cat, id, "Kathie"), 120);
-      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3479,9 +3711,6 @@ window.scrollTo({ top: 0, behavior: "auto" });
       const patch = { kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether };
       if (!normalized.seenTogether) { patch.seenTogetherAtMs = null; patch.seenTogetherDateLabel = ""; }
       await patchFilm(cat, id, patch);
-      if (value && !getHotReaction(film, "Alyssia")) {
-        setTimeout(() => openHotReactionPrompt(cat, id, "Alyssia"), 120);
-      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3492,9 +3721,6 @@ window.scrollTo({ top: 0, behavior: "auto" });
       const normalized = normalizeSeenState({ kathieSeen: true, alyssiaSeen: true, seenTogether: film.seenTogether });
       await patchFilm(cat, id, { kathieSeen: normalized.kathieSeen, alyssiaSeen: normalized.alyssiaSeen, seenTogether: normalized.seenTogether });
       showToast("Film marqué vu par les deux ✨");
-      if (!getHotReaction(film, state.activeProfile)) {
-        setTimeout(() => openHotReactionPrompt(cat, id, state.activeProfile), 120);
-      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3520,9 +3746,6 @@ window.scrollTo({ top: 0, behavior: "auto" });
       await patchFilm(cat, id, patch);
       if (value && isCinemaFilm(film)) showToast("Une séance de plus dans votre histoire 🍿");
       else showToast(value ? "Film ajouté à votre histoire à deux 🎬" : 'Statut "vu ensemble" retiré');
-      if (value && !getHotReaction(film, state.activeProfile)) {
-        setTimeout(() => openHotReactionPrompt(cat, id, state.activeProfile), 180);
-      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
@@ -3535,12 +3758,28 @@ window.scrollTo({ top: 0, behavior: "auto" });
 
 window.setPersonalRating = async (cat, id, person, value) => {
   try {
-    const patch = person === "Kathie"
-      ? { ratingKathie: value }
-      : { ratingAlyssia: value };
+    const film = getFilmByIds(cat, id);
+    if (!film) return;
 
-    await patchFilm(cat, id, patch);
-    showToast(`Note ${person} enregistrée ⭐`);
+    const field = ratingField(person);
+    const numericValue = Number(value);
+
+    if (numericValue === LEGENDARY_RATING && Number(film[field]) !== LEGENDARY_RATING) {
+      const used = getLegendaryCount(person, film.id);
+      if (used >= MAX_LEGENDARY_PER_PROFILE) {
+        showToast(`${person} a déjà utilisé ses 3 places « LE FILM » 👑`, true);
+        return;
+      }
+    }
+
+    await patchFilm(cat, id, { [field]: numericValue });
+
+    if (numericValue === LEGENDARY_RATING) {
+      const remaining = getLegendaryRemaining(person);
+      showToast(`👑 ${film.title} entre dans le panthéon de ${person} · ${remaining} place${remaining > 1 ? "s" : ""} restante${remaining > 1 ? "s" : ""}`);
+    } else {
+      showToast(`Note ${person} enregistrée ⭐`);
+    }
   } catch (error) {
     console.error(error);
     showToast("Erreur pendant l'enregistrement de la note", true);
@@ -3548,11 +3787,7 @@ window.setPersonalRating = async (cat, id, person, value) => {
 };
 window.clearPersonalRating = async (cat, id, person) => {
   try {
-    const patch = person === "Kathie"
-      ? { ratingKathie: null }
-      : { ratingAlyssia: null };
-
-    await patchFilm(cat, id, patch);
+    await patchFilm(cat, id, { [ratingField(person)]: null });
     showToast(`Note ${person} retirée`);
   } catch (error) {
     console.error(error);
@@ -3727,13 +3962,11 @@ showToast("Commentaire modifié ✨");
       await patchFilm(cat, id, { kathieSeen: true, alyssiaSeen: true, seenTogether: true, seenTogetherAtMs: now, seenTogetherDateLabel: formatDate(now) });
       showToast("Film marqué vu ce soir 🎬");
       setMainView("nosfilms");
-      if (film && !getHotReaction(film, state.activeProfile)) {
-        setTimeout(() => openHotReactionPrompt(cat, id, state.activeProfile), 220);
-      }
     } catch (error) { console.error(error); showToast("Erreur pendant la mise à jour", true); }
   };
 
   bindEvents();
+initMobileNavigationHistory();
 setupMobileAppInstall();
 watchCategories();
 watchDrawHistory();

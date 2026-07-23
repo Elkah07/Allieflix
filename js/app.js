@@ -47,6 +47,7 @@ statsDrilldown: null,
   isDrawing: false,
   lastDrawMode: "all",
   drawRejectedIds: new Set(),
+  recentDrawSessionKeys: [],
   duelRound: [],
   duelNextRound: [],
   duelPair: [],
@@ -54,7 +55,14 @@ statsDrilldown: null,
   duelRoundNumber: 1,
   wrappedYear: Number(localStorage.getItem("allieflix_wrapped_year")) || new Date().getFullYear(),
   pendingPrediction: null,
+  pendingTmdbId: null,
+  platformRefreshRunning: false,
+  platformRefreshScheduled: false,
 };
+
+const DRAW_REPEAT_COOLDOWN_MAX = 12;
+const PLATFORM_REFRESH_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+const PLATFORM_REFRESH_BATCH_SIZE = 30;
 
   const els = {
     homePage: document.getElementById("homePage"),
@@ -603,6 +611,7 @@ function showHome() {
 
   function rebuildFilmsCache() {
     state.allFilmsFlatCache = Object.values(state.allFilmsMap).flat();
+    scheduleStreamingPlatformRefresh();
   }
 
   function getAllFilmsFlat() {
@@ -699,15 +708,23 @@ async function fetchTmdbMovieDetails(movieId) {
 
 function extractFrenchPlatformName(watchProviders) {
   const fr = watchProviders?.results?.FR;
-  if (!fr) return "";
+  if (!fr) return "Indisponible actuellement";
 
-  const provider =
+  const streamingProvider =
     fr.flatrate?.[0] ||
-    fr.rent?.[0] ||
-    fr.buy?.[0] ||
+    fr.free?.[0] ||
+    fr.ads?.[0] ||
     null;
 
-  return provider?.provider_name || "";
+  if (streamingProvider?.provider_name) return streamingProvider.provider_name;
+
+  const rentalProvider = fr.rent?.[0] || null;
+  if (rentalProvider?.provider_name) return `Location : ${rentalProvider.provider_name}`;
+
+  const buyProvider = fr.buy?.[0] || null;
+  if (buyProvider?.provider_name) return `Achat : ${buyProvider.provider_name}`;
+
+  return "Indisponible actuellement";
 }
 
 function extractTrailerUrl(videos) {
@@ -717,6 +734,123 @@ function extractTrailerUrl(videos) {
     (v.type === "Trailer" || v.type === "Teaser")
   );
  return trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : "";
+}
+
+function normalizeTmdbMatchText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function pickBestTmdbMatch(results, film) {
+  if (!Array.isArray(results) || !results.length) return null;
+  const wantedTitle = normalizeTmdbMatchText(film.title);
+  const wantedYear = String(film.year || "").trim();
+
+  return results.find(movie => {
+    const titleMatches = [movie.title, movie.original_title].some(title => normalizeTmdbMatchText(title) === wantedTitle);
+    const yearMatches = !wantedYear || String(movie.release_date || "").slice(0, 4) === wantedYear;
+    return titleMatches && yearMatches;
+  }) ||
+  results.find(movie => String(movie.release_date || "").slice(0, 4) === wantedYear) ||
+  results[0];
+}
+
+async function resolveTmdbIdForFilm(film) {
+  if (film.tmdbId) return Number(film.tmdbId);
+  if (!TMDB_API_KEY || !film.title) return null;
+
+  const params = new URLSearchParams({
+    api_key: TMDB_API_KEY,
+    language: "fr-FR",
+    query: film.title,
+    page: "1",
+    include_adult: "false"
+  });
+  if (film.year) params.set("year", String(film.year));
+
+  const res = await fetch(`https://api.themoviedb.org/3/search/movie?${params.toString()}`);
+  if (!res.ok) throw new Error(`TMDB search failed (${res.status})`);
+  const data = await res.json();
+  return pickBestTmdbMatch(data.results, film)?.id || null;
+}
+
+async function refreshOneStreamingPlatform(film) {
+  const checkedAt = Date.now();
+  const tmdbId = await resolveTmdbIdForFilm(film);
+  const ref = doc(db, "categories", film.cat, "films", film.id);
+
+  if (!tmdbId) {
+    await updateDoc(ref, {
+      platformCheckedAtMs: checkedAt,
+      platformSyncStatus: "tmdb_not_found"
+    });
+    return false;
+  }
+
+  const res = await fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/watch/providers?api_key=${TMDB_API_KEY}`);
+  if (!res.ok) throw new Error(`TMDB providers failed (${res.status})`);
+  const providers = await res.json();
+  const nextPlatform = extractFrenchPlatformName(providers);
+
+  const patch = {
+    tmdbId,
+    platformCheckedAtMs: checkedAt,
+    platformSyncStatus: "ok",
+    platformSource: "JustWatch via TMDB"
+  };
+
+  if (nextPlatform && nextPlatform !== (film.platform || "")) {
+    patch.platform = nextPlatform;
+  }
+
+  await updateDoc(ref, patch);
+  return Object.prototype.hasOwnProperty.call(patch, "platform");
+}
+
+async function refreshStreamingPlatformsInBackground() {
+  if (state.platformRefreshRunning || !TMDB_API_KEY) return;
+
+  const now = Date.now();
+  const candidates = getAllFilmsFlat()
+    .filter(film => isHomeFilm(film))
+    .filter(film => !film.platformCheckedAtMs || now - Number(film.platformCheckedAtMs) >= PLATFORM_REFRESH_INTERVAL_MS)
+    .sort((a, b) => Number(a.platformCheckedAtMs || 0) - Number(b.platformCheckedAtMs || 0))
+    .slice(0, PLATFORM_REFRESH_BATCH_SIZE);
+
+  if (!candidates.length) return;
+
+  state.platformRefreshRunning = true;
+  let updatedCount = 0;
+
+  try {
+    for (const film of candidates) {
+      try {
+        if (await refreshOneStreamingPlatform(film)) updatedCount += 1;
+      } catch (error) {
+        console.warn(`Mise à jour plateforme impossible pour ${film.title}`, error);
+      }
+      await sleep(90);
+    }
+
+    if (updatedCount > 0) {
+      showToast(`${updatedCount} plateforme${updatedCount > 1 ? "s" : ""} mise${updatedCount > 1 ? "s" : ""} à jour automatiquement 📺`);
+    }
+  } finally {
+    state.platformRefreshRunning = false;
+  }
+}
+
+function scheduleStreamingPlatformRefresh() {
+  if (state.platformRefreshRunning || state.platformRefreshScheduled || !TMDB_API_KEY) return;
+  state.platformRefreshScheduled = true;
+  window.setTimeout(() => {
+    state.platformRefreshScheduled = false;
+    refreshStreamingPlatformsInBackground().catch(error => console.warn("Synchronisation des plateformes interrompue", error));
+  }, 2200);
 }
 
 
@@ -756,6 +890,7 @@ function renderTitleSuggestions(results) {
         }
 
         const { details, videos, watchProviders } = payload;
+        state.pendingTmdbId = Number(movieId) || null;
 
         document.getElementById("filmTitle").value = details.title || "";
         document.getElementById("filmSummary").value = details.overview || "";
@@ -2810,6 +2945,38 @@ function refreshUI() {
     });
   }
 
+  function drawFilmKey(film) {
+    if (film?.cat && film?.id) return `${film.cat}::${film.id}`;
+    return `title::${normalizeTmdbMatchText(film?.title)}`;
+  }
+
+  function historyDrawKey(item) {
+    if (item?.cat && item?.filmId) return `${item.cat}::${item.filmId}`;
+    return `title::${normalizeTmdbMatchText(item?.title)}`;
+  }
+
+  function excludeRecentlyDrawnFilms(pool) {
+    if (pool.length <= 1 || !state.drawHistory.length) return pool;
+
+    const poolKeys = new Set(pool.map(drawFilmKey));
+    const maxExcluded = Math.min(DRAW_REPEAT_COOLDOWN_MAX, pool.length - 1);
+    const recentKeys = new Set(
+      state.recentDrawSessionKeys
+        .filter(key => poolKeys.has(key))
+        .slice(0, maxExcluded)
+    );
+
+    for (const item of state.drawHistory) {
+      const key = historyDrawKey(item);
+      if (!poolKeys.has(key) || recentKeys.has(key)) continue;
+      recentKeys.add(key);
+      if (recentKeys.size >= maxExcluded) break;
+    }
+
+    const freshPool = pool.filter(film => !recentKeys.has(drawFilmKey(film)));
+    return freshPool.length ? freshPool : pool;
+  }
+
   function drawWeightForFilm(film) {
     let weight = 1;
     if (!film.kathieSeen && !film.alyssiaSeen) weight += 3;
@@ -2906,6 +3073,7 @@ async function autofillFromTMDB() {
 
     const movie = searchData.results[0];
     const movieId = movie.id;
+    state.pendingTmdbId = Number(movieId) || null;
 
     const detailsRes = await fetch(
       `https://api.themoviedb.org/3/movie/${movieId}?api_key=${TMDB_API_KEY}&language=fr-FR`
@@ -3081,6 +3249,7 @@ async function addDrawHistory(film, mode){
 
       const commonPayload = {
         title, platform, summary, trailerUrl, year, imageUrl, type, releaseDateMs,
+        tmdbId: state.pendingTmdbId || state.editingFilm?.tmdbId || null,
         releaseDateLabel: releaseDateMs ? formatDateOnly(releaseDateMs) : "",
         kathieSeen: seenState.kathieSeen, alyssiaSeen: seenState.alyssiaSeen, seenTogether: seenState.seenTogether,
         ...togetherDateData
@@ -3161,6 +3330,8 @@ async function addDrawHistory(film, mode){
     }
     if (!pool.length) { showToast("Aucun film disponible pour ce tirage", true); return; }
 
+    pool = excludeRecentlyDrawnFilms(pool);
+
     const label =
       mode === "seen" ? "Déjà vus" :
       mode === "unseen" ? "Non vus" :
@@ -3195,6 +3366,9 @@ async function addDrawHistory(film, mode){
     }
 
     const film = pickWeightedFilm(pool);
+    const selectedKey = drawFilmKey(film);
+    state.recentDrawSessionKeys = [selectedKey, ...state.recentDrawSessionKeys.filter(key => key !== selectedKey)]
+      .slice(0, DRAW_REPEAT_COOLDOWN_MAX);
     state.lastDrawResult = { film, label };
     renderDrawResult();
     state.isDrawing = false;
@@ -3250,6 +3424,7 @@ async function addDrawHistory(film, mode){
     state.editingFilm = null;
     state.pendingImageFile = null;
     state.pendingImageUrl = "";
+    state.pendingTmdbId = null;
     document.getElementById("filmTitle").value = "";
     document.getElementById("filmPlatform").value = "";
     document.getElementById("filmSummary").value = "";
@@ -3637,6 +3812,7 @@ window.scrollTo({ top: 0, behavior: "auto" });
     state.editingFilm = { ...film };
     state.pendingImageFile = null;
     state.pendingImageUrl = film.imageUrl || "";
+    state.pendingTmdbId = film.tmdbId || null;
     document.getElementById("filmTitle").value = film.title || "";
     document.getElementById("filmPlatform").value = film.platform || "";
     document.getElementById("filmSummary").value = film.summary || "";
